@@ -49,7 +49,7 @@ public class FileReadWriter {
             log.info("writer started");
             //use json format so serializing and deserializing is easy
             JsonParser parser = new JsonParser();
-            String fileName = dir + "\\raid_tracker_data.log";
+            String fileName = dir + "/raid_tracker_data.log";
             FileWriter fw = new FileWriter(fileName,true); //the true will append the new data
             gson.toJson(parser.parse(getJSONString(raidTracker, gson, parser)), fw);
             fw.append("\n");
@@ -104,7 +104,7 @@ public class FileReadWriter {
         if (alternateFile.length() != 0) {
             fileName = alternateFile;
         } else {
-            fileName = dir + "\\raid_tracker_data.log";
+            fileName = dir + "/raid_tracker_data.log";
         }
 
         try {
@@ -150,8 +150,8 @@ public class FileReadWriter {
         File dir_tob = new File(dir, "tob");
         IGNORE_RESULT(dir_cox.mkdir());
         IGNORE_RESULT(dir_tob.mkdir());
-        File newCoxFile = new File(dir_cox + "\\raid_tracker_data.log");
-        File newTobFile = new File(dir_tob + "\\raid_tracker_data.log");
+        File newCoxFile = new File(dir_cox + "/raid_tracker_data.log");
+        File newTobFile = new File(dir_tob + "/raid_tracker_data.log");
 
         try {
             IGNORE_RESULT(newCoxFile.createNewFile());
@@ -181,7 +181,7 @@ public class FileReadWriter {
         try {
             JsonParser parser = new JsonParser();
 
-            String fileName = dir + "\\raid_tracker_data.log";
+            String fileName = dir + "/raid_tracker_data.log";
 
 
             FileWriter fw = new FileWriter(fileName, false); //the true will append the new data
@@ -220,7 +220,7 @@ public class FileReadWriter {
             dir = coxDir;
         }
 
-        File newFile = new File(dir + "\\raid_tracker_data.log");
+        File newFile = new File(dir + "/raid_tracker_data.log");
 
         boolean isDeleted = newFile.delete();
 
