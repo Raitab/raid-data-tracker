@@ -4,9 +4,11 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 
-@ConfigGroup("raidtracker")
+@ConfigGroup(RaidTrackerConfig.CONFIG_GROUP)
 public interface RaidTrackerConfig extends Config
 {
+
+	String CONFIG_GROUP = "raidtracker";
 	@ConfigItem(
 		keyName = "defaultFFA",
 		name = "default FFA",
@@ -44,14 +46,6 @@ public interface RaidTrackerConfig extends Config
 	{
 		return true;
 	}
-
-	@ConfigItem(
-		keyName = "dey0Tracker",
-		name = "Log raid room times (dey0)",
-		description = "Track raid room times with dey0's raid timers plugin. This will replace the regular time splits panel with more detailed times of each part of the raid"
-	)
-	default boolean dey0Tracker() { return false; }
-
 
 	@ConfigItem(
 			keyName = "showKillsLogged",
@@ -144,4 +138,19 @@ public interface RaidTrackerConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "toaFilterCustomLow",
+		name = "toaFilterCustomLow",
+		description = "toaFilterCustomLow",
+		hidden = true
+	)
+	default int toaFilterCustomLow() { return 0; }
+
+	@ConfigItem(
+		keyName = "toaFilterCustomHigh",
+		name = "toaFilterCustomHigh",
+		description = "toaFilterCustomHigh",
+		hidden = true
+	)
+	default int toaFilterCustomHigh() { return 600; }
 }

@@ -21,6 +21,20 @@ If you find any bugs or problems, feel free to add me on discord, and I'll accep
 
 ## Changelog:
 
+### v1.5
+- Added Tombs of Amascut to the plugin
+  - A massive thank you to [@LLemonDuck](https://github.com/LlemonDuck)
+    - Implements [Tombs of Amascut](https://github.com/LlemonDuck/tombs-of-amascut) point tracking for personal ToA points
+    - Implements Tombs of Amascut custom events for more accurate team point tracking when config "Send to External Plugins" setting is enabled on the ToA plugin.
+    - Integration Warning panels if players don't have the ToA plugin installed, enabled, or have the "Send to External Plugins" config enabled
+  - Loot tracking
+  - Split tracking
+  - Custom Raid Level filter + single saveable preset slot
+- Fixed test dependencies
+- Loot prices now properly fetch from the G.E. before being written to the log
+- Fixed bug where the UI panel would not refresh after a config change
+- Properly removed dey0 time tracking that was missed in v1.4.4
+
 ### v1.4.4
 - Move repository ownership from Canvasba to Raitab.
 - Hide dey0 time tracking setting because it was unused.

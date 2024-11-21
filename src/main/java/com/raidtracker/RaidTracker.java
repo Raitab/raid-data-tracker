@@ -14,6 +14,8 @@ public class RaidTracker {
     boolean challengeMode = false;
     boolean inRaidChambers = false;
     boolean inTheatreOfBlood = false;
+	// I'd prefer a single k:v pair with a RaidType enum, leaving as separate bools to simplify backwards compatability
+	boolean inTombsOfAmascut = false;
     boolean FreeForAll = false;
 
     int upperTime = -1;
@@ -34,8 +36,11 @@ public class RaidTracker {
     int tightropeTime = -1;
     int crabsTime = -1;
 
+	int raidLevel = -1;
     int totalPoints = -1;
     int personalPoints = -1;
+	int personalDeathCount = 0;
+	int totalTeamDeathCount = 0;
     int teamSize = -1;
     double percentage = -1.0;
     int completionCount = -1;
@@ -71,6 +76,17 @@ public class RaidTracker {
     int tobPlayer3DeathCount = 0;
     int tobPlayer4DeathCount = 0;
     int tobPlayer5DeathCount = 0;
+
+	int apmekenTime = -1;
+	int babaTime = -1;
+	int scabarasTime = -1;
+	int kephriTime = -1;
+	int hetTime = -1;
+	int akkhaTime = -1;
+	int crondisTime = -1;
+	int zebakTime = -1;
+	int wardensTime = -1;
+	int toaCompTime = -1;
 
     //Every RaidTracker has a unique uniqueID but not necessarily a unique killCountID, if there are multiple drops.
     String uniqueID = UUID.randomUUID().toString();
