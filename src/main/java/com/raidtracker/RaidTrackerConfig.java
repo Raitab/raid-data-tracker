@@ -3,6 +3,7 @@ package com.raidtracker;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 
 @ConfigGroup(RaidTrackerConfig.CONFIG_GROUP)
 public interface RaidTrackerConfig extends Config
@@ -153,4 +154,34 @@ public interface RaidTrackerConfig extends Config
 		hidden = true
 	)
 	default int toaFilterCustomHigh() { return 600; }
+
+	@ConfigSection(
+			name = "Discord Webhook",
+			description = "Settings for posting raid completions to a Discord webhook",
+			position = 99
+	)
+	String discordSection = "discord";
+
+	@ConfigItem(
+			keyName = "webhookEnabled",
+			name = "Send to Discord",
+			description = "Automatically send raid data to a Discord webhook upon completion.",
+			position = 100,
+			section = discordSection
+	)
+	default boolean webhookEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = "webhookUrl",
+			name = "Webhook URL",
+			description = "The Discord webhook URL to send the raid data to.",
+			position = 101,
+			section = discordSection
+	)
+	default String webhookUrl() {
+		return "";
+	}
+
 }

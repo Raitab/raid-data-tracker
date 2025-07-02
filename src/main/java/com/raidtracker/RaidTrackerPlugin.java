@@ -8,6 +8,8 @@ import com.raidtracker.ui.RaidTrackerPanel;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.raidtracker.webhook.DiscordWebhook;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -56,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static java.lang.Integer.parseInt;
 import static java.lang.Float.parseFloat;
 import net.runelite.http.api.item.ItemPrice;
+import okhttp3.OkHttpClient;
 
 @Slf4j
 @PluginDescriptor(
@@ -123,6 +126,11 @@ public class RaidTrackerPlugin extends Plugin
 	@Inject
 	private PluginManager pluginManager;
 
+	@Inject
+	private OkHttpClient okHttpClient;
+
+	private DiscordWebhook discordWebhook;
+
     private boolean isFirstGameTick = true;
 
 	@Provides
@@ -162,6 +170,7 @@ public class RaidTrackerPlugin extends Plugin
 			fw.updateUsername(client.getUsername());
 			SwingUtilities.invokeLater(() -> panel.loadRTList());
 		}
+		this.discordWebhook = new DiscordWebhook(okHttpClient);
 	}
 
 	@Override
@@ -381,6 +390,8 @@ public class RaidTrackerPlugin extends Plugin
 
                 fw.writeToFile(raidTracker);
 
+				sendToWebhookIfEnabled(raidTracker);
+
                 SwingUtilities.invokeLater(() -> {
                     panel.addDrop(raidTracker);
                     reset();
@@ -421,6 +432,8 @@ public class RaidTrackerPlugin extends Plugin
                 } else {
                     fw.writeToFile(raidTracker);
                 }
+
+				sendToWebhookIfEnabled(raidTracker);
 
                 SwingUtilities.invokeLater(() -> {
                     panel.addDropToPanel(raidTracker);
@@ -490,6 +503,8 @@ public class RaidTrackerPlugin extends Plugin
                 raidTracker.setLootList(lootListFactory(rewardItemContainer.getItems()));
 
                 fw.writeToFile(raidTracker);
+
+				sendToWebhookIfEnabled(raidTracker);
 
                 writerStarted = true;
 
@@ -764,6 +779,8 @@ public class RaidTrackerPlugin extends Plugin
 					setSplits(altRT);
 
 					fw.writeToFile(altRT);
+
+					sendToWebhookIfEnabled(altRT);
 
 					SwingUtilities.invokeLater(() -> panel.addDrop(altRT, false));
 				} else {
@@ -1057,4 +1074,20 @@ public class RaidTrackerPlugin extends Plugin
 		});
 	}
 
+	private void sendToWebhookIfEnabled(final RaidTracker completedRaid) {
+		// First, a sanity check to ensure the raid is actually marked complete.
+		if (!completedRaid.isRaidComplete()) {
+			log.debug("Webhook send skipped: raid not marked as complete.");
+			return;
+		}
+
+		// Now, check the user's config settings.
+		if (config.webhookEnabled() && !config.webhookUrl().isEmpty()) {
+			log.debug("Raid complete, sending to Discord webhook.");
+
+			// This is the call to our DiscordWebhook class.
+			// It uses the EXACT object that was just saved to the file.
+			discordWebhook.sendRaid(completedRaid, config.webhookUrl());
+		}
+	}
 }
