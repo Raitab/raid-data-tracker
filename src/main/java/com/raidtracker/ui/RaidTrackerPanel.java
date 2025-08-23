@@ -1797,7 +1797,7 @@ public class RaidTrackerPanel extends PluginPanel {
 		} else if (borderOptions == 5) {
 			label.setBorder(new CompoundBorder(
 				new MatteBorder(0, 0, 1, 0, ColorScheme.LIGHT_GRAY_COLOR.darker()),
-				new EmptyBorder(5, 3, 5, 3)));
+				new EmptyBorder(5, 0, 5, 3)));
 		} else if (borderOptions == 6) {
 			label.setBorder(new CompoundBorder(
 				new MatteBorder(0,0,0,0,ColorScheme.LIGHT_GRAY_COLOR.darker()),
