@@ -710,6 +710,8 @@ public class RaidTrackerPlugin extends Plugin
 				if ((m = TOA_COMPLETION_PATTERN.matcher(message)).matches()) {
 					int duration = stringTimeToSeconds(m.group("duration"));
 
+                    raidTracker.setRaidLevel(client.getVarbitValue(Varbits.TOA_RAID_LEVEL));
+
 					if (Objects.equals(m.group("type"), "challenge")) {
                         raidTracker.setToaCompTime(duration);
                     }
