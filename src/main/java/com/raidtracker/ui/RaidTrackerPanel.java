@@ -9,6 +9,7 @@ import com.raidtracker.WorldUtils;
 import com.raidtracker.filereadwriter.FileReadWriter;
 
 import java.awt.Insets;
+import java.util.Objects;
 import javax.swing.BorderFactory;
 import javax.swing.JTextPane;
 import javax.swing.text.SimpleAttributeSet;
@@ -106,7 +107,10 @@ public class RaidTrackerPanel extends PluginPanel {
     @Setter
     private String dateFilter = "All Time";
     @Setter
-    private String cmFilter = "CM & Normal";
+    private String cmCoxFilter = "CM & Normal";
+    @Setter
+    @Getter
+    private String cmTobFilter = "All Levels";
     @Setter
     private String mvpFilter = "Both";
 	@Setter
@@ -1018,15 +1022,29 @@ public class RaidTrackerPanel extends PluginPanel {
             }
         });
 
-        JComboBox<String> cm = new JComboBox<>(new String []{"CM & Normal", "Normal Only", "CM Only"});
-        cm.setFocusable(false);
-		cm.setPreferredSize(new Dimension(105,25));
-		cm.setMinimumSize(new Dimension(100, 25));
-		cm.setMaximumSize(new Dimension(110, 25));
-        cm.setSelectedItem(cmFilter);
+        JComboBox<String> cmCox = new JComboBox<>(new String []{"CM & Normal", "Normal Only", "CM Only"});
+        cmCox.setFocusable(false);
+        cmCox.setPreferredSize(new Dimension(105,25));
+        cmCox.setMinimumSize(new Dimension(100, 25));
+        cmCox.setMaximumSize(new Dimension(110, 25));
+        cmCox.setSelectedItem(cmCoxFilter);
 
-        cm.addActionListener(e -> {
-            cmFilter = cm.getSelectedItem().toString();
+        cmCox.addActionListener(e -> {
+            cmCoxFilter = cmCox.getSelectedItem().toString();
+            if (loaded) {
+                updateView();
+            }
+        });
+
+        JComboBox<String> cmTob = new JComboBox<>(new String []{"All Levels", "Entry Mode", "Normal Mode", "Hard Mode"});
+        cmTob.setFocusable(false);
+        cmTob.setPreferredSize(new Dimension(105,25));
+        cmTob.setMinimumSize(new Dimension(100, 25));
+        cmTob.setMaximumSize(new Dimension(110, 25));
+        cmTob.setSelectedItem(cmTobFilter);
+
+        cmTob.addActionListener(e -> {
+            cmTobFilter = cmTob.getSelectedItem().toString();
             if (loaded) {
                 updateView();
             }
@@ -1149,10 +1167,10 @@ public class RaidTrackerPanel extends PluginPanel {
 
 		switch (selectedRaidTab) {
             case COX:
-                wrapper.add(cm, c);
+                wrapper.add(cmCox, c);
                 break;
 			case TOB:
-				wrapper.add(mvp, c);
+                wrapper.add(cmTob, c);
 				break;
 			case TOA:
 				wrapper.add(raidLevel, c);
@@ -1167,9 +1185,18 @@ public class RaidTrackerPanel extends PluginPanel {
 
 		c.gridy = 4;
 
-		if (selectedRaidTab.equals(RaidType.TOA)) {
-			wrapper.add(getToAFilterPanel(), c);
-		}
+        switch (selectedRaidTab) {
+            case COX:
+                break;
+            case TOB:
+                wrapper.add(mvp, c);
+                break;
+            case TOA:
+                wrapper.add(getToAFilterPanel(), c);
+                break;
+            default:
+                break;
+        }
 
         JPanel buttonWrapper = new JPanel();
         buttonWrapper.setPreferredSize(new Dimension(82, 20));
@@ -1496,7 +1523,7 @@ public class RaidTrackerPanel extends PluginPanel {
                             .getUpperTime()
                     ), 1));
 
-                    if (!cmFilter.equals("Normal Only")) {
+                    if (!cmCoxFilter.equals("Normal Only")) {
                         int middleTime = getFilteredRTList().stream()
                                             .filter(RT -> RT.getMiddleTime() > 0)
                                             .min(comparing(RaidTracker::getMiddleTime))
@@ -1874,7 +1901,7 @@ public class RaidTrackerPanel extends PluginPanel {
 
     public ArrayList<RaidTracker> filterRTListByName(String name) {
         if (loaded) {
-            return getFilteredRTList().stream().filter(RT -> name.toLowerCase().equals(RT.getSpecialLoot().toLowerCase()))
+            return getFilteredRTList().stream().filter(RT -> name.equalsIgnoreCase(RT.getSpecialLoot()))
                     .collect(Collectors.toCollection(ArrayList::new));
         }
         return new ArrayList<>();
@@ -2116,9 +2143,9 @@ public class RaidTrackerPanel extends PluginPanel {
 
 		switch(selectedRaidTab) {
             case COX:
-                if (cmFilter.equals("CM & Normal")) {
+                if (cmCoxFilter.equals("CM & Normal")) {
                     tempRTList = coxRTList;
-                } else if (cmFilter.equals("CM Only")) {
+                } else if (cmCoxFilter.equals("CM Only")) {
                     tempRTList = coxRTList.stream().filter(RT -> RT.getChallengeMode().equalsIgnoreCase("Challenge"))
                         .collect(Collectors.toCollection(ArrayList::new));
                 } else {
@@ -2127,13 +2154,18 @@ public class RaidTrackerPanel extends PluginPanel {
                 }
                 break;
 			case TOB:
-				if (mvpFilter.equals("Both")) {
-					tempRTList = tobRTList;
-				} else if (mvpFilter.equals("My MVP")) {
-					tempRTList = tobRTList.stream().filter(RaidTracker::isMvpInOwnName)
+                tempRTList = tobRTList;
+
+                if (!Objects.equals(cmTobFilter, "All Levels")) {
+                    tempRTList = tempRTList.stream().filter(RT -> RT.getChallengeMode().equalsIgnoreCase(cmTobFilter.replace(" Mode", "")))
+                        .collect(Collectors.toCollection(ArrayList::new));
+                }
+
+                if (mvpFilter.equals("My MVP")) {
+					tempRTList = tempRTList.stream().filter(RaidTracker::isMvpInOwnName)
 						.collect(Collectors.toCollection(ArrayList::new));
-				} else {
-					tempRTList = tobRTList.stream().filter(RT -> !RT.isMvpInOwnName())
+				} else if (mvpFilter.equals("My Non-MVP")) {
+					tempRTList = tempRTList.stream().filter(RT -> !RT.isMvpInOwnName())
 						.collect(Collectors.toCollection(ArrayList::new));
 				}
 				break;
@@ -2190,13 +2222,14 @@ public class RaidTrackerPanel extends PluginPanel {
             case "15-24 Players":
 				tempRTList = tempRTList.stream().filter(RT -> (RT.getTeamSize() >= 15 && RT.getTeamSize() <= 24))
 					.collect(Collectors.toCollection(ArrayList::new));
+                break;
 			case "24+ Players":
                 tempRTList = tempRTList.stream().filter(RT -> (RT.getTeamSize() >= 25))
                         .collect(Collectors.toCollection(ArrayList::new));
                 break;
             default:
                 //all sizes
-
+                break;
         }
 
         //if people want to crash my plugin using a system year of before 1970, that's fine

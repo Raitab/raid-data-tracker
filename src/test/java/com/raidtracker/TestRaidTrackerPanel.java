@@ -52,7 +52,7 @@ public class TestRaidTrackerPanel extends TestCase
         RaidTrackerPanel panel = mock(RaidTrackerPanel.class, CALLS_REAL_METHODS);
         panel.setLoaded(true);
         panel.setCoxRTList(l);
-        panel.setCmFilter("CM & Normal");
+        panel.setCmCoxFilter("CM & Normal");
         panel.setDateFilter("All Time");
         panel.setMvpFilter("Both");
         panel.setTeamSizeFilter("All sizes");
