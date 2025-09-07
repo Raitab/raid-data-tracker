@@ -109,8 +109,14 @@ public class FileReadWriter {
 
                 if (line.contains("\"challengeMode\":true") || line.contains("\"challengeMode\":false")) {
                     log.info("Found challengeMode set to boolean while reading {} log: attempting to migrate", Text.titleCase(raidType));
-                    line = line.replace("\"challengeMode\":true", "\"challengeMode\":\"Challenge\"");
-                    line = line.replace("\"challengeMode\":false", "\"challengeMode\":\"Normal\"");
+
+                    if (line.contains("\"inTombsOfAmascut\":true") || line.contains("\"inTheatreOfBlood\":true")) {
+                        line = line.replace("\"challengeMode\":false", "\"challengeMode\":\"\"");
+                    } else {
+                        line = line.replace("\"challengeMode\":true", "\"challengeMode\":\"Challenge\"");
+                        line = line.replace("\"challengeMode\":false", "\"challengeMode\":\"Normal\"");
+                    }
+
                     overwriteRTLog = true;
                 }
 
