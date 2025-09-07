@@ -294,13 +294,36 @@ public class RaidTrackerTest extends TestCase
             null,
             ChatMessageType.FRIENDSCHATNOTIFICATION,
             "",
-            "Challenge complete: The Wardens. Duration: 10:15.60Tombs of Amascut: Expert Mode challenge completion time: 34:07.20. Personal best: 28:16.20",
+            "Challenge complete: The Wardens. Duration: 10:15.60<br>Tombs of Amascut: Expert Mode challenge completion time: 34:07.20. Personal best: 28:16.20",
             "",
             0);
         raidTrackerPlugin.checkChatMessage(message, raidTracker);
 
 		assertEquals(616, raidTracker.getWardensTime());
 		assertEquals(2047, raidTracker.getToaCompTime());
+
+        message = new ChatMessage(
+            null,
+            ChatMessageType.FRIENDSCHATNOTIFICATION,
+            "",
+            "Challenge complete: The Wardens. Duration: <col=ef1020>6:04.20</col><br>Tombs of Amascut challenge completion time: <col=ef1020>20:46.20</col> (new personal best)",
+            "",
+            0);
+        raidTrackerPlugin.checkChatMessage(message, raidTracker);
+
+        assertEquals(364, raidTracker.getWardensTime());
+//        assertEquals(2047, raidTracker.getToaCompTime());
+
+        message = new ChatMessage(
+            null,
+            ChatMessageType.FRIENDSCHATNOTIFICATION,
+            "",
+            "Tombs of Amascut total completion time: <col=ef1020>24:30.00</col> (new personal best)",
+            "",
+            0);
+        raidTrackerPlugin.checkChatMessage(message, raidTracker);
+
+        assertEquals(1470, raidTracker.getRaidTime());
 
         message = new ChatMessage(
             null,
@@ -479,12 +502,12 @@ public class RaidTrackerTest extends TestCase
             null,
             ChatMessageType.GAMEMESSAGE,
             "",
-            "Your completed Chambers of Xeric Challenge Mode count is: 57.",
+            "Your completed Chambers of Xeric Challenge Mode count is: <col=ff0000>57</col>.",
             "",
             0);
         raidTrackerPlugin.checkChatMessage(message, raidTracker);
 
-		assertTrue(raidTracker.isChallengeMode());
+        assertEquals("Challenge", raidTracker.getChallengeMode());
 		assertEquals(57, raidTracker.getCompletionCount());
 
 		message.setMessage("Your completed Chambers of Xeric count is: 443");

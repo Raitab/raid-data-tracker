@@ -13,7 +13,7 @@ public class RaidTracker {
     boolean chestOpened = false;
     boolean raidComplete = false;
     boolean loggedIn = false;
-    boolean challengeMode = false;
+    String challengeMode = "";
     boolean inRaidChambers = false;
     boolean inTheatreOfBlood = false;
 	// I'd prefer a single k:v pair with a RaidType enum, leaving as separate bools to simplify backwards compatability

@@ -63,7 +63,8 @@ import net.runelite.http.api.item.ItemPrice;
 )
 public class RaidTrackerPlugin extends Plugin
 {
-	private static final String LEVEL_COMPLETE_MESSAGE = "complete! Duration:";
+    private static final Pattern CHALLENGE_MODE_KC_PATTERN = Pattern.compile(".*Your completed (?<raid>Chambers of Xeric|Theatre of Blood:?|Tombs of Amascut:?) (?:(?<difficulty>\\w+) Mode )?count is: (?<killcount>(?:\\d|,)+).*");
+    private static final String LEVEL_COMPLETE_MESSAGE = "complete! Duration:";
 	private static final String RAID_COMPLETE_MESSAGE_COX = "Congratulations - your raid is complete!";
 	private static final String RAID_COMPLETE_MESSAGE_TOA = "Challenge complete: The Wardens.";
 	private static final String DUST_RECIPIENTS = "Dust recipients: ";
@@ -733,10 +734,9 @@ public class RaidTrackerPlugin extends Plugin
 				raidTracker.setRaidTime(stringTimeToSeconds(message.split("Duration: ")[1].split(" ")[0]));
 			}
 
-			//works for tob
-			if (message.contains("count is:")) {
-				raidTracker.setChallengeMode(message.contains("Chambers of Xeric Challenge Mode"));
-				raidTracker.setCompletionCount(parseInt(message.split("count is:")[1].trim().replace(".", "")));
+            if ((m = CHALLENGE_MODE_KC_PATTERN.matcher(message)).matches()) {
+                raidTracker.setChallengeMode(m.group("difficulty") != "" ? m.group("difficulty") : "Normal");
+                raidTracker.setCompletionCount(parseInt(m.group("killcount")));
 				if (raidTracker.isInTheatreOfBlood()) {
 					int teamSize = 0;
 
@@ -947,7 +947,7 @@ public class RaidTrackerPlugin extends Plugin
         RT.setProfileType(raidTracker.getProfileType());
 		RT.setDate(raidTracker.getDate());
 		RT.setTeamSize(raidTracker.getTeamSize());
-		RT.setChallengeMode(raidTracker.isChallengeMode());
+		RT.setChallengeMode(raidTracker.getChallengeMode());
 		RT.setInTheatreOfBlood(raidTracker.isInTheatreOfBlood());
 		RT.setCompletionCount(raidTracker.getCompletionCount());
 		RT.setKillCountID(raidTracker.getKillCountID());

@@ -88,7 +88,7 @@ public class FileReadWriter {
 
     public ArrayList<RaidTracker> readFromFile(String alternateFile, RaidType raidType) {
         String fileName = getRaidFileName(raidType);
-        boolean foundReplacementUnicode = false;
+        boolean overwriteRTLog = false;
 
 		if (alternateFile.length() != 0) {
 			fileName = alternateFile;
@@ -102,8 +102,16 @@ public class FileReadWriter {
 
 			while ((line = bufferedreader.readLine()) != null && line.length() > 0) {
                 if (line.contains("\uFFFD")) {
-                    foundReplacementUnicode = true;
+                    log.info("Found replacement unicode character while reading {} log: attempting to overwrite", Text.titleCase(raidType));
                     line = line.replace("\uFFFD", " ");
+                    overwriteRTLog = true;
+                }
+
+                if (line.contains("\"challengeMode\":true") || line.contains("\"challengeMode\":false")) {
+                    log.info("Found challengeMode set to boolean while reading {} log: attempting to migrate", Text.titleCase(raidType));
+                    line = line.replace("\"challengeMode\":true", "\"challengeMode\":\"Challenge\"");
+                    line = line.replace("\"challengeMode\":false", "\"challengeMode\":\"Normal\"");
+                    overwriteRTLog = true;
                 }
 
 				try {
@@ -116,8 +124,7 @@ public class FileReadWriter {
 
 			bufferedreader.close();
 
-            if (foundReplacementUnicode) {
-                log.info("Found replacement unicode character while reading {} log: attempting to overwrite", Text.titleCase(raidType));
+            if (overwriteRTLog) {
                 updateRTList(RTList, raidType);
             }
 

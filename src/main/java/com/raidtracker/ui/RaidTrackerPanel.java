@@ -2119,10 +2119,10 @@ public class RaidTrackerPanel extends PluginPanel {
                 if (cmFilter.equals("CM & Normal")) {
                     tempRTList = coxRTList;
                 } else if (cmFilter.equals("CM Only")) {
-                    tempRTList = coxRTList.stream().filter(RaidTracker::isChallengeMode)
+                    tempRTList = coxRTList.stream().filter(RT -> RT.getChallengeMode().equalsIgnoreCase("Challenge"))
                         .collect(Collectors.toCollection(ArrayList::new));
                 } else {
-                    tempRTList = coxRTList.stream().filter(RT -> !RT.isChallengeMode())
+                    tempRTList = coxRTList.stream().filter(RT -> RT.getChallengeMode().equalsIgnoreCase("Normal"))
                         .collect(Collectors.toCollection(ArrayList::new));
                 }
                 break;
@@ -2263,7 +2263,7 @@ public class RaidTrackerPanel extends PluginPanel {
     public RaidUniques getByName(String name) {
         EnumSet<RaidUniques> uniquesList = getUniquesList();
         for (RaidUniques unique: uniquesList) {
-            if (unique.getName().toLowerCase().equals(name.toLowerCase())) {
+            if (unique.getName().equalsIgnoreCase(name)) {
                 return unique;
             }
         }
