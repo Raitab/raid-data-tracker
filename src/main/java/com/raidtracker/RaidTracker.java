@@ -9,6 +9,7 @@ import java.util.UUID;
 public class RaidTracker {
 
     long accountHash = -1;
+    String username = "";
     String profileType = "";
     boolean chestOpened = false;
     boolean raidComplete = false;

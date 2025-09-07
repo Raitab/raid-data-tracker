@@ -146,8 +146,11 @@ public class FileReadWriter {
     public void createFolders() {
 		File dir = new File(RUNELITE_DIR, "raid-data tracker");
 		IGNORE_RESULT(dir.mkdir());
-		dir = new File(dir, username);
-		IGNORE_RESULT(dir.mkdir());
+        // Username fetching is fixed for Webhooks integration. Commenting this out to disable username folder creation
+        // to avoid breaking logs until the migration update is finished
+
+        // dir = new File(dir, username);
+        // IGNORE_RESULT(dir.mkdir());
 		File dir_cox = new File(dir, "cox");
 		File dir_tob = new File(dir, "tob");
 		File dir_toa = new File(dir, "toa");

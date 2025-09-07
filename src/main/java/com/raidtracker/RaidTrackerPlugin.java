@@ -160,7 +160,6 @@ public class RaidTrackerPlugin extends Plugin
 
 		if (client.getGameState().equals(GameState.LOGGED_IN) || client.getGameState().equals(GameState.LOADING))
 		{
-			fw.updateUsername(client.getUsername());
 			SwingUtilities.invokeLater(() -> panel.loadRTList());
 		}
 	}
@@ -317,6 +316,8 @@ public class RaidTrackerPlugin extends Plugin
             isFirstGameTick = false;
             raidTracker.setProfileType(String.valueOf(RuneScapeProfileType.getCurrent(client)));
             raidTracker.setAccountHash(client.getAccountHash());
+            fw.updateUsername(client.getLocalPlayer().getName());
+            raidTracker.setUsername(client.getLocalPlayer().getName());
             SwingUtilities.invokeLater(() -> panel.loadRTList());
         }
 
