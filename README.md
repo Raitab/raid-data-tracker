@@ -18,9 +18,14 @@ Data is stored at `~/.runelite/raid-data-tracker/RAID/raid_tracker_data.log`, wh
 If you find any bugs or problems, feel free to message me on Discord - @raitab.
 
 ## Changelog:
-### v1.6.6
-- Fix normal ToA Completion time tracking regex
+### v1.7
+This update adds ToB difficulty tracking for logs! Unfortunately because this information wasn't previously tracked, all previous logs will only be viewable under the "All Levels" ToB filter.
+These can be manually updated by modifying the `/tob/raid_tracker_data.log` directly.
+- Add ToB difficulty level tracking and panel filter
 - Fix splits not being tracked for users that don't have 'Precise Timing' enabled
+- Fix normal ToA completion time tracking regex
+- Fix ToA raid level not updating when failing time invocations
+- Update a depreciated Username call in preparation for Webhook PR
 
 ### v1.6.5
 - Remove apostrophe from MVP plural

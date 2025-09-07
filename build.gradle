@@ -34,7 +34,7 @@ dependencies {
 }
 
 group = 'com.raidtracker'
-version = '1.6.7'
+version = '1.7.0'
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
