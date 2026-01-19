@@ -16,7 +16,7 @@ public class RaidTracker {
     boolean challengeMode = false;
     boolean inRaidChambers = false;
     boolean inTheatreOfBlood = false;
-	// I'd prefer a single k:v pair with a RaidType enum, leaving as separate bools to simplify backwards compatability
+	// I'd prefer a single k:v pair with a RaidType enum, leaving as separate bools to simplify backwards compatibility
 	boolean inTombsOfAmascut = false;
     boolean FreeForAll = false;
 

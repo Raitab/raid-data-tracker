@@ -29,19 +29,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package com.raidtracker.toapointstracker.util;
 
 import com.raidtracker.toapointstracker.module.PluginLifecycleComponent;
-import javax.inject.Inject;
-import javax.inject.Singleton;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import net.runelite.api.Client;
-import net.runelite.api.Varbits;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
+
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 @Singleton
 @RequiredArgsConstructor(onConstructor_ = @Inject)
@@ -49,7 +51,6 @@ public class RaidStateTracker implements PluginLifecycleComponent
 {
 
 	private static final int REGION_LOBBY = 13454;
-	private static final int WIDGET_PARENT_ID = 481;
 	private static final int WIDGET_CHILD_ID = 40;
 
 	private static final RaidState DEFAULT_STATE = new RaidState(false, false, null, 0);
@@ -81,7 +82,7 @@ public class RaidStateTracker implements PluginLifecycleComponent
 		LocalPoint lp = client.getLocalPlayer().getLocalLocation();
 		int region = lp == null ? -1 : WorldPoint.fromLocalInstance(client, lp).getRegionID();
 
-		Widget w = client.getWidget(WIDGET_PARENT_ID, WIDGET_CHILD_ID);
+		Widget w = client.getWidget(InterfaceID.TOA_HUD, WIDGET_CHILD_ID);
 
 		boolean inLobby = region == REGION_LOBBY;
 		RaidRoom currentRoom = RaidRoom.forRegionId(region);
@@ -124,12 +125,12 @@ public class RaidStateTracker implements PluginLifecycleComponent
 	private int countPlayers()
 	{
 		return 1 +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_1_HEALTH) != 0 ? 1 : 0) +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_2_HEALTH) != 0 ? 1 : 0) +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_3_HEALTH) != 0 ? 1 : 0) +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_4_HEALTH) != 0 ? 1 : 0) +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_5_HEALTH) != 0 ? 1 : 0) +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_6_HEALTH) != 0 ? 1 : 0) +
-			(client.getVarbitValue(Varbits.TOA_MEMBER_7_HEALTH) != 0 ? 1 : 0);
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P1) != 0 ? 1 : 0) +
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P2) != 0 ? 1 : 0) +
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P3) != 0 ? 1 : 0) +
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P4) != 0 ? 1 : 0) +
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P5) != 0 ? 1 : 0) +
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P6) != 0 ? 1 : 0) +
+			(client.getVarbitValue(VarbitID.TOA_CLIENT_P7) != 0 ? 1 : 0);
 	}
 }
