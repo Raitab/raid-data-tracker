@@ -20,7 +20,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
-import net.runelite.api.ItemID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -1945,7 +1944,7 @@ public class RaidTrackerPanel extends PluginPanel {
     public ArrayList<RaidTracker> filterOwnKits(ArrayList<RaidTracker> l) {
         if (loaded) {
             return l.stream().filter(RT -> RT.getLootList().stream()
-                    .anyMatch(loot -> loot.getId() == ItemID.TWISTED_ANCESTRAL_COLOUR_KIT))
+                    .anyMatch(loot -> loot.getId() == RaidUniques.TWISTED_KIT.getItemID()))
                     .collect(Collectors.toCollection(ArrayList::new));
         }
         return new ArrayList<>();
@@ -1955,7 +1954,7 @@ public class RaidTrackerPanel extends PluginPanel {
         if (loaded) {
 
             return l.stream().filter(RT -> RT.getLootList().stream()
-                    .anyMatch(loot -> loot.getId() == ItemID.METAMORPHIC_DUST))
+                    .anyMatch(loot -> loot.getId() == RaidUniques.DUST.getItemID()))
                     .collect(Collectors.toCollection(ArrayList::new));
         }
         return new ArrayList<>();
