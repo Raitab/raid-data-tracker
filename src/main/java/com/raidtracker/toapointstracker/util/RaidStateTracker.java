@@ -122,6 +122,10 @@ public class RaidStateTracker implements PluginLifecycleComponent
 		}
 	}
 
+    /**
+     * Counts the number of players based on varbits for each player slot.
+     * @return
+     */
 	private int countPlayers()
 	{
 		return 1 +

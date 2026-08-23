@@ -46,12 +46,9 @@ public enum RaidMode
 	@Getter
 	private final Color color;
 
-	public static RaidMode forRaidLevel(int raidLevel)
-	{
-		for (RaidMode mode : RaidMode.values())
-		{
-			if (mode.minRaidLevel <= raidLevel && raidLevel <= mode.maxRaidLevel)
-			{
+	public static RaidMode forRaidLevel(int raidLevel) {
+		for (RaidMode mode : RaidMode.values()) {
+			if (mode.minRaidLevel <= raidLevel && raidLevel <= mode.maxRaidLevel) {
 				return mode;
 			}
 		}

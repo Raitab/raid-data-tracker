@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.runelite.api.gameval.ItemID;
 
+import java.util.EnumSet;
+
 @AllArgsConstructor
 public enum RaidUniques {
     DEX("Dexterous Prayer Scroll", ItemID.RAIDS_PRAYERSCROLL),
@@ -45,4 +47,44 @@ public enum RaidUniques {
 
     @Getter
     private final int itemID;
+
+    public static final EnumSet<RaidUniques> COX_UNIQUES = EnumSet.of(
+        DEX,
+        ARCANE,
+        TWISTED_BUCKLER,
+        DHCB,
+        DINNY_B,
+        ANCESTRAL_HAT,
+        ANCESTRAL_TOP,
+        ANCESTRAL_BOTTOM,
+        DRAGON_CLAWS,
+        ELDER_MAUL,
+        KODAI,
+        TWISTED_BOW,
+        DUST,
+        TWISTED_KIT,
+        OLMLET
+    );
+
+    public static final EnumSet<RaidUniques> TOA_UNIQUES = EnumSet.of(
+        OSMUMTENS_FANG,
+        LIGHTBEARER,
+        ELIDINIS_WARD,
+        MASORI_MASK,
+        MASORI_BODY,
+        MASORI_CHAPS,
+        TUMEKENS_SHADOW,
+        TUMEKENS_GUARDIAN
+    );
+
+    public static final EnumSet<RaidUniques> TOB_UNIQUES = EnumSet.of(
+        AVERNIC,
+        RAPIER,
+        SANGSTAFF,
+        JUSTI_FACEGUARD,
+        JUSTI_CHESTGUARD,
+        JUSTI_LEGGUARDS,
+        SCYTHE,
+        LILZIK
+    );
 }

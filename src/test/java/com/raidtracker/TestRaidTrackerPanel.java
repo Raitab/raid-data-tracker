@@ -17,7 +17,6 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.concurrent.ExecutionException;
 
 import static org.mockito.Answers.CALLS_REAL_METHODS;
@@ -58,23 +57,7 @@ public class TestRaidTrackerPanel extends TestCase
         panel.setTeamSizeFilter("All sizes");
 		panel.setSelectedRaidTab(RaidType.COX);
 
-        when(panel.getUniquesList()).thenReturn(EnumSet.of(
-                RaidUniques.DEX,
-                RaidUniques.ARCANE,
-                RaidUniques.TWISTED_BUCKLER,
-                RaidUniques.DHCB,
-                RaidUniques.DINNY_B,
-                RaidUniques.ANCESTRAL_HAT,
-                RaidUniques.ANCESTRAL_TOP,
-                RaidUniques.ANCESTRAL_BOTTOM,
-                RaidUniques.DRAGON_CLAWS,
-                RaidUniques.ELDER_MAUL,
-                RaidUniques.KODAI,
-                RaidUniques.TWISTED_BOW,
-                RaidUniques.DUST,
-                RaidUniques.TWISTED_KIT,
-                RaidUniques.OLMLET
-        ));
+        when(panel.getUniquesList()).thenReturn(RaidUniques.COX_UNIQUES);
 
         ItemManager IM = mock(ItemManager.class);
 
