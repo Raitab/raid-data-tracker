@@ -10,8 +10,9 @@ import com.google.inject.Inject;
 import com.raidtracker.RaidTracker;
 import com.raidtracker.RaidTrackerItem;
 import com.raidtracker.RaidType;
+import com.raidtracker.profile.ProfileFilter;
+import com.raidtracker.profile.ProfileSelection;
 import java.util.stream.Collectors;
-import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import java.io.BufferedReader;
@@ -20,24 +21,115 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static net.runelite.client.RuneLite.RUNELITE_DIR;
 import net.runelite.client.util.Text;
 
 @Slf4j
 public class FileReadWriter {
+	private static File dataRootDirOverride;
 
-	@Getter
+	public static void setDataRootDir(File rootDir) {
+		dataRootDirOverride = rootDir;
+	}
+
+	public static void clearDataRootDir() {
+		dataRootDirOverride = null;
+	}
+
 	private String username;
+	private final ProfileSelection profileSelection = new ProfileSelection();
 	private String coxDir;
 	private String tobDir;
 	private String toaDir;
-    private String defaultDir;
+	private String defaultDir;
 
 	@Inject
-    @Setter
+	@Setter
 	private Gson gson;
+
+	public boolean hasUsername() {
+		return username != null;
+	}
+
+	public File getDataRootDir() {
+		if (dataRootDirOverride != null) {
+			return dataRootDirOverride;
+		}
+
+		File primary = new File(RUNELITE_DIR, "raid-data-tracker");
+		File legacy = new File(RUNELITE_DIR, "raid-data tracker");
+		if (username != null) {
+			File primaryUser = new File(primary, username);
+			File legacyUser = new File(legacy, username);
+			if (hasTrackedRaidData(legacyUser) && !hasTrackedRaidData(primaryUser)) {
+				return legacy;
+			}
+		}
+		if (hasTrackedRaidData(legacy) && !hasTrackedRaidData(primary)) {
+			return legacy;
+		}
+		return primary.exists() || !legacy.exists() ? primary : legacy;
+	}
+
+	public String getSelectedProfileType() {
+		return profileSelection.getSelectedProfileType();
+	}
+
+	public void setSelectedProfileType(String selectedProfileType) {
+		profileSelection.setSelectedProfileType(selectedProfileType);
+	}
+
+	public String getProfileHash() {
+		return profileSelection.getProfileHash();
+	}
+
+	public void setProfileHash(String profileHash) {
+		profileSelection.setProfileHash(profileHash);
+	}
+
+	public String getProfileHashDisplayLabel(String hashValue) {
+		return ProfileHashDisplay.format(hashValue);
+	}
+
+	private File getRaidLogFile(File profileDir, RaidType raidType) {
+		File logFile = new File(new File(profileDir, raidType.name().toLowerCase()), "raid_tracker_data.log");
+		if (!logFile.isFile() && profileDir.getName().equalsIgnoreCase(raidType.name())) {
+			return new File(profileDir, "raid_tracker_data.log");
+		}
+		return logFile;
+	}
+
+	private boolean matchesSelectedProfileHash(RaidTracker parsed) {
+		return ProfileFilter.matchesSelectedProfileHash(parsed, profileSelection.getProfileHash());
+	}
+
+	private boolean hasTrackedRaidFolders(File profileRoot) {
+		return profileRoot.isDirectory()
+				&& (new File(profileRoot, "cox").isDirectory()
+				|| new File(profileRoot, "tob").isDirectory()
+				|| new File(profileRoot, "toa").isDirectory());
+	}
+
+	private boolean hasTrackedRaidData(File profileRoot) {
+		if (!profileRoot.isDirectory()) {
+			return false;
+		}
+		for (RaidType raidType : RaidType.values()) {
+			File logFile = getRaidLogFile(profileRoot, raidType);
+			if (logFile.isFile() && logFile.length() > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean matchesSelectedProfileType(RaidTracker parsed) {
+		return ProfileFilter.matchesSelectedProfileType(parsed, profileSelection.getSelectedProfileType());
+	}
 
     public void writeToFile(RaidTracker raidTracker) {
         String fileName;
@@ -108,7 +200,9 @@ public class FileReadWriter {
 
 				try {
 					RaidTracker parsed = gson.fromJson(parser.parse(line), RaidTracker.class);
-					RTList.add(parsed);
+					if (matchesSelectedProfileType(parsed) && matchesSelectedProfileHash(parsed)) {
+						RTList.add(parsed);
+					}
 				} catch (JsonSyntaxException e) {
 					log.warn("Bad line: {}", line);
 				}
@@ -137,18 +231,17 @@ public class FileReadWriter {
 	}
 
     public void createFolders() {
-		File dir = new File(RUNELITE_DIR, "raid-data tracker");
-		IGNORE_RESULT(dir.mkdir());
-		dir = new File(dir, username);
-		IGNORE_RESULT(dir.mkdir());
+		File root = getDataRootDir();
+		File dir = new File(root, username != null ? username : "unknown");
+		IGNORE_RESULT(dir.mkdirs());
 		File dir_cox = new File(dir, "cox");
 		File dir_tob = new File(dir, "tob");
 		File dir_toa = new File(dir, "toa");
         File dir_default = new File(dir, "unknown");
-		IGNORE_RESULT(dir_cox.mkdir());
-		IGNORE_RESULT(dir_tob.mkdir());
-		IGNORE_RESULT(dir_toa.mkdir());
-        IGNORE_RESULT(dir_default.mkdir());
+		IGNORE_RESULT(dir_cox.mkdirs());
+		IGNORE_RESULT(dir_tob.mkdirs());
+		IGNORE_RESULT(dir_toa.mkdirs());
+        IGNORE_RESULT(dir_default.mkdirs());
 		this.coxDir = dir_cox.getAbsolutePath();
 		this.tobDir = dir_tob.getAbsolutePath();
 		this.toaDir = dir_toa.getAbsolutePath();
@@ -166,7 +259,21 @@ public class FileReadWriter {
 
 	public void updateUsername(final String username) {
 		this.username = username;
+//		profileSelection.reset();
 		createFolders();
+	}
+
+	public boolean initializeExistingFlatFolders() {
+		File root = getDataRootDir();
+		if (!hasTrackedRaidFolders(root)) {
+			return false;
+		}
+
+		this.coxDir = new File(root, "cox").getAbsolutePath();
+		this.tobDir = new File(root, "tob").getAbsolutePath();
+		this.toaDir = new File(root, "toa").getAbsolutePath();
+		this.defaultDir = new File(root, "unknown").getAbsolutePath();
+		return true;
 	}
 
 	// Used for making sure ToA loot and points is accurate

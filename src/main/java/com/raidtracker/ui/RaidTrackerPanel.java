@@ -7,6 +7,10 @@ import com.raidtracker.RaidTrackerItem;
 import com.raidtracker.RaidType;
 import com.raidtracker.WorldUtils;
 import com.raidtracker.filereadwriter.FileReadWriter;
+import com.raidtracker.filereadwriter.ProfileHashDisplay;
+import com.raidtracker.profile.ProfileFilter;
+import com.raidtracker.profile.ProfileSelection;
+import com.raidtracker.profile.ProfileUtils;
 
 import java.awt.Insets;
 import javax.swing.BorderFactory;
@@ -33,6 +37,7 @@ import net.runelite.client.util.ImageUtil;
 
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -66,6 +71,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
@@ -82,6 +88,7 @@ public class RaidTrackerPanel extends PluginPanel {
 	@Setter
     private ItemManager itemManager;
     private final FileReadWriter fw;
+    private final ProfileUtils profileUtils = new ProfileUtils();
     private final RaidTrackerConfig config;
     private final ClientThread clientThread;
     private final Client client;
@@ -178,6 +185,10 @@ public class RaidTrackerPanel extends PluginPanel {
 
 	private Component titleComponent;
 	private Component filterComponent;
+    private JComboBox<String> profileSelector;
+    private JComboBox<String> profileHashSelector;
+    private boolean updatingProfileSelector;
+    private boolean updatingProfileHashSelector;
 
     public RaidTrackerPanel(
         final ItemManager itemManager,
@@ -1132,6 +1143,52 @@ public class RaidTrackerPanel extends PluginPanel {
             }
         });
 
+        profileSelector = new JComboBox<>();
+        refreshProfileSelector();
+        profileSelector.setPreferredSize(new Dimension(130, 25));
+        profileSelector.setFocusable(false);
+        profileSelector.setToolTipText("Select profile type to view");
+        profileSelector.setFont(FontManager.getRunescapeSmallFont());
+        profileSelector.addActionListener(e -> {
+            if (updatingProfileSelector) {
+                return;
+            }
+            String selectedProfile = (String) profileSelector.getSelectedItem();
+            if (selectedProfile == null || selectedProfile.equals(fw.getSelectedProfileType())) {
+                return;
+            }
+            fw.setSelectedProfileType(selectedProfile);
+            refreshProfileSelector();
+            if (loaded) {
+                updateView();
+            }
+        });
+
+        profileHashSelector = new JComboBox<>();
+        refreshProfileHashSelector();
+        profileHashSelector.setPreferredSize(new Dimension(130, 25));
+        profileHashSelector.setFocusable(false);
+        profileHashSelector.setToolTipText("Select profile hash to view");
+        profileHashSelector.setFont(FontManager.getRunescapeSmallFont());
+        profileHashSelector.addActionListener(e -> {
+            if (updatingProfileHashSelector) {
+                return;
+            }
+            String selectedLabel = (String) profileHashSelector.getSelectedItem();
+            if (selectedLabel == null) {
+                return;
+            }
+            String selectedHash = resolveSelectedProfileHash(selectedLabel, profileUtils.getProfileHashes(fw.getDataRootDir()));
+            if (selectedHash.equals(fw.getProfileHash())) {
+                return;
+            }
+            fw.setProfileHash(selectedHash);
+            refreshProfileHashSelector();
+            if (loaded) {
+                updateView();
+            }
+        });
+
 
         c.gridy = 1;
         wrapper.add(Box.createRigidArea(new Dimension(0, 5)), c);
@@ -1171,6 +1228,15 @@ public class RaidTrackerPanel extends PluginPanel {
 			wrapper.add(getToAFilterPanel(), c);
 		}
 
+        c.gridx = 0;
+        c.gridy = 5;
+        c.gridwidth = 2;
+        c.anchor = GridBagConstraints.WEST;
+        wrapper.add(profileSelector, c);
+        c.gridy = 6;
+        wrapper.add(profileHashSelector, c);
+        c.gridwidth = 1;
+
         JPanel buttonWrapper = new JPanel();
         buttonWrapper.setPreferredSize(new Dimension(82, 20));
         buttonWrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR.darker());
@@ -1208,9 +1274,7 @@ public class RaidTrackerPanel extends PluginPanel {
         JButton refresh = imageButton(refreshIcon);
         refresh.setToolTipText("Refresh kills logged");
         refresh.addActionListener(e -> {
-            if (loaded) {
-                loadRTList();
-            }
+            loadRTList();
         });
 
         JButton delete = imageButton(deleteIcon);
@@ -1256,7 +1320,9 @@ public class RaidTrackerPanel extends PluginPanel {
         buttonWrapper.add(refresh);
         buttonWrapper.add(delete);
 
+        c.gridx = 2;
         c.gridy = 0;
+        c.anchor = GridBagConstraints.EAST;
 
         wrapper.add(buttonWrapper, c);
         return wrapper;
@@ -1851,6 +1917,16 @@ public class RaidTrackerPanel extends PluginPanel {
 
     public void loadRTList() {
         //TODO: support for a custom file so that it can be added to onedrive for example.
+        if (!fw.hasUsername() && !fw.initializeExistingFlatFolders()) {
+            coxRTList = new ArrayList<>();
+            tobRTList = new ArrayList<>();
+            toaRTList = new ArrayList<>();
+            loaded = true;
+            refreshProfileSelector();
+            updateView();
+            return;
+        }
+
         coxRTList = fw.readFromFile(RaidType.COX);
         for (RaidTracker RT : coxRTList) {
             coxUUIDMap.put(RT.getUniqueID(), RT);
@@ -1868,8 +1944,86 @@ public class RaidTrackerPanel extends PluginPanel {
 			toaUUIDMap.put(RT.getUniqueID(), RT);
 		}
 
+        refreshProfileSelector();
+        refreshProfileHashSelector();
         loaded = true;
         updateView();
+    }
+
+    private void refreshProfileHashSelector() {
+        if (profileHashSelector == null) {
+            return;
+        }
+
+        String selectedHash = fw.getProfileHash();
+        if (selectedHash == null) {
+            selectedHash = ProfileSelection.ALL_PROFILE_HASHES;
+        }
+
+        List<String> profileHashes = profileUtils.getProfileHashes(fw.getDataRootDir());
+        DefaultComboBoxModel<String> profileHashModel = new DefaultComboBoxModel<>();
+        profileHashModel.addElement(ProfileSelection.ALL_PROFILE_HASHES);
+        for (String profileHash : profileHashes) {
+            profileHashModel.addElement(fw.getProfileHashDisplayLabel(profileHash));
+        }
+
+        updatingProfileHashSelector = true;
+        profileHashSelector.setModel(profileHashModel);
+        if (containsProfile(profileHashModel, selectedHash)) {
+            profileHashSelector.setSelectedItem(selectedHash);
+        } else {
+            String selectedDisplay = fw.getProfileHashDisplayLabel(selectedHash);
+            if (containsProfile(profileHashModel, selectedDisplay)) {
+                profileHashSelector.setSelectedItem(selectedDisplay);
+            } else {
+                profileHashSelector.setSelectedItem(ProfileSelection.ALL_PROFILE_HASHES);
+                fw.setProfileHash(ProfileSelection.ALL_PROFILE_HASHES);
+            }
+        }
+        updatingProfileHashSelector = false;
+    }
+
+    private void refreshProfileSelector() {
+        if (profileSelector == null) {
+            return;
+        }
+
+        String selectedProfile = fw.getSelectedProfileType();
+        if (selectedProfile == null) {
+            selectedProfile = ProfileSelection.ALL_PROFILE_TYPES;
+        }
+
+        DefaultComboBoxModel<String> profileModel = new DefaultComboBoxModel<>();
+        profileModel.addElement(ProfileSelection.ALL_PROFILE_TYPES);
+        for (String profileName : profileUtils.getProfileNames(fw.getDataRootDir())) {
+            profileModel.addElement(profileName);
+        }
+
+        updatingProfileSelector = true;
+        profileSelector.setModel(profileModel);
+        if (containsProfile(profileModel, selectedProfile)) {
+            profileSelector.setSelectedItem(selectedProfile);
+        } else {
+            profileSelector.setSelectedItem(ProfileSelection.ALL_PROFILE_TYPES);
+            fw.setSelectedProfileType(ProfileSelection.ALL_PROFILE_TYPES);
+        }
+        updatingProfileSelector = false;
+    }
+
+    private String resolveSelectedProfileHash(String selectedLabel, List<String> profileHashes) {
+        return ProfileHashDisplay.resolveSelectedHash(selectedLabel, profileHashes, fw::getProfileHashDisplayLabel);
+    }
+
+    private boolean containsProfile(DefaultComboBoxModel<String> profileModel, String profileName) {
+        if (profileName == null) {
+            return false;
+        }
+        for (int i = 0; i < profileModel.getSize(); i++) {
+            if (profileName.equals(profileModel.getElementAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public ArrayList<RaidTracker> filterRTListByName(String name) {
@@ -2199,6 +2353,12 @@ public class RaidTrackerPanel extends PluginPanel {
 
         }
 
+        if (fw != null && !ProfileSelection.ALL_PROFILE_HASHES.equals(fw.getProfileHash())) {
+            tempRTList = tempRTList.stream()
+                .filter(RT -> ProfileFilter.matchesSelectedProfileHash(RT, fw.getProfileHash()))
+                .collect(Collectors.toCollection(ArrayList::new));
+        }
+
         //if people want to crash my plugin using a system year of before 1970, that's fine
         long now = System.currentTimeMillis();
 
@@ -2272,13 +2432,7 @@ public class RaidTrackerPanel extends PluginPanel {
     }
 
     public ArrayList<RaidTracker> getDistinctKills(ArrayList<RaidTracker> tempRTList) {
-        HashMap<String, RaidTracker> tempUUIDMap = new LinkedHashMap<>();
-
-        for (RaidTracker RT : tempRTList) {
-            tempUUIDMap.put(RT.getKillCountID(), RT);
-        }
-
-        return new ArrayList<>(tempUUIDMap.values());
+        return RaidTrackerFilters.distinctKills(tempRTList);
     }
 
     private void clearData()
