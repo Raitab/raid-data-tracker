@@ -27,7 +27,11 @@ dependencies {
 
     testImplementation 'org.mockito:mockito-core:3.12.4'
     testImplementation 'org.mockito:mockito-inline:3.12.4'
-	testImplementation 'com.google.inject.extensions:guice-testlib:4.2.3'
+	// Exclude guice-testlib's transitive full Guice (4.2.3, bundles cglib) so RuneLite's
+	// guice:4.1.0:no_aop is used instead; cglib class generation fails on Java 17+
+	testImplementation 'com.google.inject.extensions:guice-testlib:4.2.3', {
+		exclude group: 'com.google.inject', module: 'guice'
+	}
     testImplementation 'junit:junit:4.13.1'
     testImplementation "net.runelite:client:$runeLiteVersion"
     testImplementation "net.runelite:jshell:$runeLiteVersion"
@@ -74,9 +78,4 @@ tasks.register('shadowJar', Jar) {
 	group = BasePlugin.BUILD_GROUP
 	archiveClassifier.set('shadow')
 	archiveFileName.set("${rootProject.name}-${project.version}-all.jar")
-}
-
-// Guice 4.x generates classes via cglib, which needs java.lang opened on Java 17+
-tasks.withType(Test).configureEach {
-	jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
 }
