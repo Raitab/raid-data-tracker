@@ -50,13 +50,13 @@ public class RaidTracker {
     String specialLoot = "";
     String specialLootReceiver = "";
     boolean specialLootInOwnName = false;
-    int specialLootValue = -1;
+    long specialLootValue = -1;
     String kitReceiver = "";
     String dustReceiver = "";
     String petReceiver = "";
     boolean petInMyName = false;
-    int lootSplitReceived = -1;
-    int lootSplitPaid = -1;
+    long lootSplitReceived = -1;
+    long lootSplitPaid = -1;
     ArrayList<RaidTrackerItem> lootList = new ArrayList<>();
 
     int maidenTime = -1;

@@ -27,7 +27,13 @@ dependencies {
 
     testImplementation 'org.mockito:mockito-core:3.12.4'
     testImplementation 'org.mockito:mockito-inline:3.12.4'
-	testImplementation 'com.google.inject.extensions:guice-testlib:4.2.3'
+	// Exclude guice-testlib's transitive Guice and Guava so RuneLite's own versions are used:
+	// full Guice 4.2.3 bundles cglib, which cannot generate classes on Java 17+, and
+	// Guava 27 "android" lacks the stream collectors RuneLite's Guava "jre" provides.
+	testImplementation 'com.google.inject.extensions:guice-testlib:4.2.3', {
+		exclude group: 'com.google.inject', module: 'guice'
+		exclude group: 'com.google.guava'
+	}
     testImplementation 'junit:junit:4.13.1'
     testImplementation "net.runelite:client:$runeLiteVersion"
     testImplementation "net.runelite:jshell:$runeLiteVersion"

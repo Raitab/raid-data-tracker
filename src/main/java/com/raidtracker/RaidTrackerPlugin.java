@@ -872,7 +872,7 @@ public class RaidTrackerPlugin extends Plugin
 	public void setSplits(RaidTracker raidTracker)
 	{
 
-		int lootSplit = raidTracker.getSpecialLootValue() / raidTracker.getTeamSize();
+		long lootSplit = raidTracker.getSpecialLootValue() / raidTracker.getTeamSize();
 
 		int cutoff = config.FFACutoff();
 
@@ -1040,10 +1040,10 @@ public class RaidTrackerPlugin extends Plugin
 		return sb.toString();
 	}
 
-	public int getItemPrice(ItemPrice itemPrice) {
+	public long getItemPrice(ItemPrice itemPrice) {
 		return itemPrice.getWikiPrice() > 0 ? itemPrice.getWikiPrice() : itemPrice.getPrice();
 	}
-	public int getItemPrice(int itemID) {
+	public long getItemPrice(int itemID) {
 		return itemManager.getItemPrice(itemID) > 0 ? itemManager.getItemPrice(itemID) : itemManager.getItemComposition(itemID).getPrice();
 	}
 
