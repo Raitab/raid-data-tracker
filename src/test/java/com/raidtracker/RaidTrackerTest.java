@@ -4,6 +4,7 @@ import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.raidtracker.filereadwriter.FileReadWriter;
 import com.raidtracker.ui.RaidTrackerPanel;
+import com.raidtracker.ui.SplitChanger;
 import junit.framework.TestCase;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
@@ -571,6 +572,72 @@ public class RaidTrackerTest extends TestCase
 		assertEquals(1198653000, lootList.get(0).getPrice());
 
 
+	}
+
+	@Test
+	public void TestPricesAboveIntRange()
+	{
+		// RuneLite 1.13 made item prices long; make sure values past Integer.MAX_VALUE survive
+		final long tbowPrice = 3_000_000_000L;
+
+		//--------------------------- purple value and splits ---------------------------
+		RaidTracker raidTracker = new RaidTracker();
+		raidTracker.setInRaidChambers(true);
+		raidTracker.setRaidComplete(true);
+		raidTracker.setTeamSize(3);
+
+		ItemPrice tbowTest = new ItemPrice();
+		tbowTest.setId(0);
+		tbowTest.setName("Twisted bow");
+		tbowTest.setPrice(tbowPrice);
+
+		List<ItemPrice> tbowTestList = new ArrayList<>();
+		tbowTestList.add(tbowTest);
+
+		Player player = mock(Player.class);
+		raidTrackerPlugin.setPanel(mock(RaidTrackerPanel.class));
+		raidTrackerPlugin.setFw(mock(FileReadWriter.class));
+
+		when(itemManager.search(anyString())).thenReturn(tbowTestList);
+		when(client.getLocalPlayer()).thenReturn(player);
+		when(player.getName()).thenReturn("Canvasba");
+		when(raidTrackerConfig.FFACutoff()).thenReturn(1000000);
+
+		ChatMessage message = new ChatMessage(
+			null,
+			ChatMessageType.FRIENDSCHATNOTIFICATION,
+			"",
+			"Canvasba - Twisted bow",
+			"",
+			0);
+		raidTrackerPlugin.checkChatMessage(message, raidTracker);
+
+		assertEquals(tbowPrice, raidTracker.getSpecialLootValue());
+
+		raidTrackerPlugin.setSplits(raidTracker);
+
+		assertEquals(tbowPrice / 3, raidTracker.getLootSplitReceived());
+		assertEquals(tbowPrice - tbowPrice / 3, raidTracker.getLootSplitPaid());
+
+		//--------------------------- loot list price * quantity ---------------------------
+		Item[] items = new Item[1];
+		items[0] = new Item(4, 2);
+
+		ItemComposition comp = mock(ItemComposition.class);
+		when(itemManager.getItemComposition(4)).thenReturn(comp);
+		when(itemManager.getItemPrice(4)).thenReturn(tbowPrice);
+		when(comp.getName()).thenReturn("Twisted bow");
+		when(comp.getId()).thenReturn(4);
+
+		ArrayList<RaidTrackerItem> lootList = raidTrackerPlugin.lootListFactory(items);
+
+		assertEquals(1, lootList.size());
+		assertEquals(tbowPrice * 2, lootList.get(0).getPrice());
+
+		//--------------------------- split editor text parsing ---------------------------
+		assertEquals(3_000_000_000L, SplitChanger.parse("3b"));
+		assertEquals(2_500_000_000L, SplitChanger.parse("2.5b"));
+		assertEquals(3_000_000_000L, SplitChanger.parse("3000000000"));
 	}
 
 }
