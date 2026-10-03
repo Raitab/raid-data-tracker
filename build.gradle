@@ -75,3 +75,8 @@ tasks.register('shadowJar', Jar) {
 	archiveClassifier.set('shadow')
 	archiveFileName.set("${rootProject.name}-${project.version}-all.jar")
 }
+
+// Guice 4.x generates classes via cglib, which needs java.lang opened on Java 17+
+tasks.withType(Test).configureEach {
+	jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+}

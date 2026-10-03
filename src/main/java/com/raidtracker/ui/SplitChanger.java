@@ -107,7 +107,7 @@ public class SplitChanger extends JPanel {
 
         splitReceived.getDocument().addDocumentListener((SimpleDocumentListener) e -> {
             if (!locked) {
-                int value = parse(splitReceived.getText());
+                long value = parse(splitReceived.getText());
 
                 if (value != raidTracker.getLootSplitReceived() && value != -5) {
                     raidTracker.setLootSplitReceived(value);
@@ -223,7 +223,7 @@ public class SplitChanger extends JPanel {
         return textField;
     }
 
-    private int atLeastZero(int maybeLessThanZero) {
+    private long atLeastZero(long maybeLessThanZero) {
         return Math.max(maybeLessThanZero, 0);
     }
 
@@ -247,7 +247,7 @@ public class SplitChanger extends JPanel {
     private void setSplit() {
         boolean inOwnName = raidTracker.isSpecialLootInOwnName();
 
-        int splitSize = raidTracker.getSpecialLootValue() / raidTracker.getTeamSize();
+        long splitSize = raidTracker.getSpecialLootValue() / raidTracker.getTeamSize();
 
         if (!raidTracker.isFreeForAll()) {
             if (inOwnName) {
@@ -319,13 +319,13 @@ public class SplitChanger extends JPanel {
         return hasDecimal ? (truncated / 10d) + suffix : (truncated / 10) + suffix;
     }
 
-    public static int parse (String s) {
+    public static long parse (String s) {
         if (s == null || s.length() == 0) {
             return -5;
         }
         char c = s.charAt(s.length() - 1);
         if (Character.isLetter(c)) {
-            int multiplier;
+            long multiplier;
 
             if (c == 'k') {
                 multiplier = 1000;
@@ -334,7 +334,7 @@ public class SplitChanger extends JPanel {
                 multiplier = 1000000;
             }
             else if (c == 'b') {
-                multiplier = 1000000000;
+                multiplier = 1000000000L;
             }
             else {
                 return -5;
@@ -343,11 +343,11 @@ public class SplitChanger extends JPanel {
             String substr = s.substring(0, s.length() - 1);
 
             if (isNumeric(substr)) {
-                return (int) Math.round(Double.parseDouble(substr) * multiplier);
+                return Math.round(Double.parseDouble(substr) * multiplier);
             }
         }
         else if (isNumeric(s)) {
-            return (int) Math.round(Double.parseDouble(s));
+            return Math.round(Double.parseDouble(s));
         }
         return -5;
     }

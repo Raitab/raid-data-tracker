@@ -807,7 +807,7 @@ public class RaidTrackerPanel extends PluginPanel {
             } catch (InterruptedException | ExecutionException e) {
                 uniqueIDs = new HashMap<>();
             } finally {
-                Map<Integer, Integer> priceMap = new HashMap<>();
+                Map<Integer, Long> priceMap = new HashMap<>();
 
                 for (RaidTrackerItem item : uniqueIDs.values()) {
                     priceMap.put(item.getId(), item.getPrice());
@@ -832,10 +832,10 @@ public class RaidTrackerPanel extends PluginPanel {
 
                     ArrayList<RaidTrackerItem> regularDropsList = new ArrayList<>(uniqueIDs.values());
 
-                    regularDropsList.sort((o2, o1) -> Integer.compare(o1.getPrice(), o2.getPrice()));
+                    regularDropsList.sort((o2, o1) -> Long.compare(o1.getPrice(), o2.getPrice()));
 
 
-                    int regularDropsSum = regularDropsList.stream().mapToInt(RaidTrackerItem::getPrice).sum();
+                    long regularDropsSum = regularDropsList.stream().mapToLong(RaidTrackerItem::getPrice).sum();
 
                     final JPanel drops = new JPanel();
                     drops.setLayout(new GridLayout(0, 5));
