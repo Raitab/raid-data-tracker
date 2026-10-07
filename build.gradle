@@ -48,7 +48,6 @@ tasks.withType(JavaCompile).configureEach {
 	options.release.set(11)
 }
 
-
 tasks.register('run', JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = pluginMainClass
