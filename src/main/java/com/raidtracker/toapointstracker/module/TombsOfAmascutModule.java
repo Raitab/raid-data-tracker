@@ -28,22 +28,30 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 package com.raidtracker.toapointstracker.module;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.inject.AbstractModule;
-import com.google.inject.multibindings.Multibinder;
+import com.google.inject.Provides;
 import com.raidtracker.toapointstracker.pointstracker.PointsTracker;
 import com.raidtracker.toapointstracker.util.RaidStateTracker;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.Set;
 
 @Slf4j
 public class TombsOfAmascutModule extends AbstractModule
 {
 
 	@Override
-	protected void configure()
-	{
-		Multibinder<PluginLifecycleComponent> lifecycleComponents = Multibinder.newSetBinder(binder(), PluginLifecycleComponent.class);
-		lifecycleComponents.addBinding().to(PointsTracker.class);
-		lifecycleComponents.addBinding().to(RaidStateTracker.class);
+	protected void configure() {
+		bind(ComponentManager.class);
+	}
+
+	@Provides
+    Set<PluginLifecycleComponent> lifecycleComponents(
+		PointsTracker pointsTracker,
+		RaidStateTracker raidStateTracker
+	) {
+		return ImmutableSet.of(pointsTracker, raidStateTracker);
 	}
 
 }

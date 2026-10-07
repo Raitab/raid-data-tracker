@@ -19,11 +19,6 @@ def pluginMainClass = 'com.raidtracker.RunClientAndPlugin'
 dependencies {
 	compileOnly "net.runelite:client:$runeLiteVersion"
 
-    // Exclude transitive Guice and Guava so RuneLite's own versions are used:
-	implementation("com.google.inject.extensions:guice-multibindings:4.1.0") {
-		exclude group: 'com.google.inject'
-	}
-
 	compileOnly 'org.projectlombok:lombok:1.18.30'
 	annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
