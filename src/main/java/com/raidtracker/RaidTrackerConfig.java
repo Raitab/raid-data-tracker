@@ -25,8 +25,8 @@ public interface RaidTrackerConfig extends Config
 			description = "The value of which, when the split reaches under that value, is considered free for all"
 	)
 
-	default int FFACutoff() {
-		return 1000000;
+	default long FFACutoff() {
+		return 1_000_000;
 	}
 
 	@ConfigItem(

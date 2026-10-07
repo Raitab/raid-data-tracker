@@ -734,10 +734,10 @@ public class RaidTrackerPanel extends PluginPanel {
         ArrayList<RaidTrackerItem> regularDropsList = new ArrayList<>(regularDrops.values());
 
         regularDropsList.sort((o2, o1) ->
-            Integer.compare(o1.getPrice(), o2.getPrice()));
+            Long.compare(o1.getPrice(), o2.getPrice()));
 
-        int regularDropsSum = regularDropsList.stream()
-            .mapToInt(RaidTrackerItem::getPrice)
+        long regularDropsSum = regularDropsList.stream()
+            .mapToLong(RaidTrackerItem::getPrice)
             .sum();
 
         final JPanel drops = new JPanel();

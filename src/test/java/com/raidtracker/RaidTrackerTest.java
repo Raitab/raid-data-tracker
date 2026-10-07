@@ -96,7 +96,7 @@ public class RaidTrackerTest extends TestCase
 		when(itemManager.search(anyString())).thenReturn(kodaiTestList);
 		when(client.getLocalPlayer()).thenReturn(player);
 		when(player.getName()).thenReturn("Canvasba");
-		when(raidTrackerConfig.FFACutoff()).thenReturn(1000000);
+		when(raidTrackerConfig.FFACutoff()).thenReturn(1000000L);
 
 		raidTracker.setTeamSize(3);
 
