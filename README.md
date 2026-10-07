@@ -18,6 +18,10 @@ Data is stored at `~/.runelite/raid-data-tracker/RAID/raid_tracker_data.log`, wh
 If you find any bugs or problems, feel free to message me on Discord - @raitab.
 
 ## Changelog:
+### v1.7.0
+- Changes made to support September 30, 2026, update that raised the max cash limit. Big thanks to [@Brettgod1355](https://github.com/Brettgod1355)
+- Maintenance updates
+
 ### v1.6.6
 - Fix normal ToA Completion time tracking regex
 - Fix splits not being tracked for users that don't have 'Precise Timing' enabled
