@@ -30,6 +30,7 @@ import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -272,26 +273,8 @@ public class SplitChanger extends JPanel {
         String dateText;
 
         LocalDate date = Instant.ofEpochMilli(raidTracker.getDate()).atZone(ZoneId.systemDefault()).toLocalDate();
-        LocalDate today = LocalDate.now();
-        LocalDate yesterday = today.minusDays(1);
-        LocalDate lastWeek = today.minusDays(7);
-        LocalDate lastMonth = today.minusDays(30);
-        LocalDate lastYear = today.minusDays(365);
-
-
-        if (date.equals(today)) {
-            dateText = "today";
-        } else if (date.equals(yesterday)) {
-            dateText = "yesterday";
-        } else if (date.isAfter(lastWeek)) {
-            dateText = "last week";
-        } else if (date.isAfter(lastMonth)) {
-            dateText = "last month";
-        } else if (date.isAfter(lastYear)) {
-            dateText = "last year"; //todo ???
-        } else {
-            dateText = "a long time ago";
-        }
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
+        dateText = date.format(dateFormatter);
 
         return dateText;
     }
