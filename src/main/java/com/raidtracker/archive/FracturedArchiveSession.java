@@ -11,21 +11,21 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.HitsplatID;
+import net.runelite.api.gameval.AnimationID;
+import net.runelite.api.gameval.NpcID;
 import net.runelite.client.util.Text;
-import net.runelite.api.gameval.InterfaceID;
-import net.runelite.api.widgets.Widget;
 
 /**
  * Live Fractured Archive state. The plugin keeps the event subscriptions and calls in.
  * One reward window is one log line. Leaving after the completion message, before that window,
- * is also one line, with an empty chest. A teammate unique or an MVP result that arrives
+ * is also one line, with an empty chest. A teammate unique that arrives
  * after the chest stays on that line until the next boss, a leave, or a wipe.
  * Logout keeps that line open so a later chest updates it. A world hop and a leave close it.
  * Shutdown keeps it open only while the reward chest is still on screen.
@@ -57,7 +57,7 @@ public final class FracturedArchiveSession {
 	/** The raid whose append failed. It is not the live plugin field, so a reset cannot drop it. */
 	private RaidTracker pending;
 	private boolean stored;
-	/** The chest line is still accepting a teammate unique or an MVP result. */
+	/** The chest line is still accepting a teammate unique. */
 	private boolean claimOpen;
 	/** Leave or wipe closed the raid. Ignore the HUD until it actually closes. */
 	private boolean ignoreHud;
@@ -70,8 +70,18 @@ public final class FracturedArchiveSession {
 	private int overall = -1;
 	private int party = -1;
 	private int killCount = -1;
-	private int deaths;
-	private Boolean ownMvp;
+	private final ArchiveContribution contribution = new ArchiveContribution();
+	/** False until this session has seen the timer widget once. The first sample is not an opening. */
+	private boolean timerKnown;
+	/** Own deaths already on the tally when the saved raid's timer closed. Later deaths belong to the next raid. */
+	private int deathsAtClaim;
+	/** The tally was started for the next raid while the previous chest line was still open. */
+	private boolean tallyOutlivesClaim;
+	/** Points and deaths of a completion that is still only in memory, taken when its timer closed. */
+	private boolean completionParked;
+	private Double parkedPoints;
+	private Integer parkedDeaths;
+	private int parkedDeathCount;
 	private final List<UniqueDrop> drops = new ArrayList<>();
 	private RaidTracker lastClaimed;
 	/** Claimed raids whose rewrite failed. The same raid is not queued twice. */
@@ -202,10 +212,10 @@ public final class FracturedArchiveSession {
 	}
 
 	/**
-	 * A fresh session can adopt the newest log line only when that line is still an open claim.
-	 * An open chest is not enough: the chest of a later raid must not fill a line that was already closed.
-	 * The line has to have been written within {@link #OPEN_CLAIM_MS}. An older line is a previous raid.
-	 * True when that line is now the open claim.
+	 * A fresh session can adopt the newest log line only when that line is still waiting for the
+	 * chest on screen. The raid timer does not adopt a line. A closed line stays closed.
+	 * The line has to have been written within {@link #OPEN_CLAIM_MS}, and it has no loot yet.
+	 * True when that line is now the open chest.
 	 */
 	public boolean needsResumeCheck() {
 		return !resumeChecked
@@ -218,19 +228,23 @@ public final class FracturedArchiveSession {
 			&& !keptAttempt();
 	}
 
-	public boolean noteResumeTick(boolean archiveWidgetsOpen, RaidTracker latest, long now) {
+	public boolean noteResumeTick(boolean chestOpen, RaidTracker latest, long now) {
 		if (!needsResumeCheck()) {
 			return false;
 		}
-		boolean markedOpen = latest != null && Boolean.TRUE.equals(latest.getOpenClaim());
-		if (!markedOpen) {
-			if (archiveWidgetsOpen || ++resumeTicks >= RETURN_TICKS) {
+		boolean waiting = latest != null
+			&& Boolean.TRUE.equals(latest.getOpenChest())
+			&& (latest.getLootList() == null || latest.getLootList().isEmpty());
+		if (!chestOpen || !waiting) {
+			// A chest that is not this line settles the check. The timer is not a chest, so keep looking
+			// until the chest widget arrives or the usual return ticks pass.
+			if (chestOpen || ++resumeTicks >= RETURN_TICKS) {
 				resumeChecked = true;
 			}
 			return false;
 		}
 		resumeChecked = true;
-		if (latest == null || latest.getUniqueID() == null || latest.getDate() <= 0) {
+		if (latest.getUniqueID() == null || latest.getDate() <= 0) {
 			return false;
 		}
 		long age = now - latest.getDate();
@@ -240,8 +254,8 @@ public final class FracturedArchiveSession {
 		lastClaimed = latest;
 		claimOpen = true;
 		stored = true;
-		// Widgets closed: this is only the saved line, not a raid the player is standing in.
-		parked = !archiveWidgetsOpen;
+		contribution.reset();
+		parked = false;
 		return true;
 	}
 
@@ -257,7 +271,7 @@ public final class FracturedArchiveSession {
 		return overall > 0 && !claimOpen && pending == null && !stored;
 	}
 
-	/** The chest line still taking a teammate unique or an MVP. Null once that window closes. */
+	/** The chest line still taking a teammate unique. Null once that window closes. */
 	public RaidTracker liveClaim() {
 		if (!claimOpen) {
 			return null;
@@ -337,6 +351,9 @@ public final class FracturedArchiveSession {
 			setOverallTime(seconds);
 			return;
 		}
+		if (isOwnDeath(message) && (raidHudOpen || !bossTimes.isEmpty() || overall > 0)) {
+			contribution.addOwnDeath(party >= 1 ? party : 0);
+		}
 		if (blocked() || (ignoreHud && !claimOpen && !hasProgress())) {
 			return;
 		}
@@ -346,11 +363,11 @@ public final class FracturedArchiveSession {
 			if (count > 0) {
 				killCount = count;
 			}
-			return;
 		}
-		if ((raidHudOpen || !bossTimes.isEmpty() || overall > 0) && (matcher = DEATH.matcher(message)).find()) {
-			deaths = Integer.parseInt(matcher.group("count"));
-		}
+	}
+
+	private static boolean isOwnDeath(String message) {
+		return message.startsWith("You have died") && DEATH.matcher(message).matches();
 	}
 
 	/** A fight that actually happened. A duration that is not above 0 is left unset, not stored as 0. */
@@ -358,7 +375,11 @@ public final class FracturedArchiveSession {
 		if (boss == null || seconds <= 0 || blocked()) {
 			return;
 		}
+		boolean firstTime = !bossTimes.containsKey(boss);
 		bossTimes.put(boss, seconds);
+		if (firstTime) {
+			contribution.closeRoom(boss);
+		}
 	}
 
 	/** Real party size. A solo is 1. Sizes outside 1 to 8 are ignored. */
@@ -367,6 +388,7 @@ public final class FracturedArchiveSession {
 			return;
 		}
 		party = size;
+		contribution.noteTeamSize(size);
 	}
 
 	/** Overall raid duration. A time that is not above 0 stays off the line. */
@@ -378,34 +400,82 @@ public final class FracturedArchiveSession {
 	}
 
 	/**
-	 * The stats screen only marks MVP when it is you. Yes, or your own name, stores ownMvp.
-	 * Another player's name clears it. A blank widget, or "-", does not change the raid.
-	 * The same text can arrive after the chest; it updates that open line and does not start a new one.
+	 * Personal points from The Fractured Archive plugin. They replace the live tally, including a
+	 * raid that was not tracked from the start. A line already written is updated. The team total
+	 * is not stored, and the plugin's chat line is not read.
 	 */
-	public void noteMvp(String widgetText, String playerName) {
-		if (widgetText == null || playerName == null || !listeningForMvp()) {
+	public void noteExternalPoints(int personal) {
+		if (raid() == null || WorldUtils.playerOnUntrackedWorld(client)) {
 			return;
 		}
-		String mvp = cleanName(widgetText);
-		String player = cleanName(playerName);
-		if (mvp.isEmpty() || player.isEmpty() || "-".equals(mvp)) {
+		boolean liveHasProgress = overall > 0 || !bossTimes.isEmpty() || completionParked;
+		if (!stored && liveHasProgress) {
+			int deaths = contribution.countedDeaths();
+			contribution.useTotals(personal, deaths);
+			if (completionParked) {
+				parkedPoints = (double) personal;
+				parkedDeaths = deaths;
+			}
 			return;
 		}
-		Boolean next = "yes".equalsIgnoreCase(mvp) || mvp.equalsIgnoreCase(player) ? Boolean.TRUE : null;
-		if (Objects.equals(ownMvp, next)) {
-			return;
-		}
-		ownMvp = next;
 		RaidTracker target = openClaim();
 		if (target == null) {
+			if (!stored) {
+				contribution.useTotals(personal, contribution.countedDeaths());
+			}
 			return;
 		}
-		Boolean written = Boolean.TRUE.equals(next) ? Boolean.TRUE : null;
-		if (Objects.equals(target.getOwnMvp(), written)) {
-			return;
-		}
-		target.setOwnMvp(written);
+		Integer deaths = target.getOwnDeaths();
+		target.setContributionPoints((double) personal);
+		target.setOwnDeaths(deaths != null ? deaths : contribution.countedDeaths());
 		publish(target);
+	}
+
+	/**
+	 * Replaces the live tally. Either value missing omits both from the line.
+	 * Zero is stored. This does not change a line that has already been written.
+	 */
+	public void setTrackedInputs(Double points, Integer deaths) {
+		if (blocked()) {
+			return;
+		}
+		if (points == null || deaths == null || !Double.isFinite(points)) {
+			contribution.omit();
+			return;
+		}
+		contribution.useTotals(points, deaths);
+	}
+
+	/**
+	 * One hitsplat on an NPC. A heal is ignored. Only the open phase's two counters change.
+	 */
+	public void addHitsplat(boolean mine, int hitsplatType, int amount) {
+		if (amount < 1 || hitsplatType == HitsplatID.HEAL || raid() == null || WorldUtils.playerOnUntrackedWorld(client)) {
+			return;
+		}
+		contribution.addHit(mine, amount);
+	}
+
+	/** Ocellus changing into phase 2 or phase 3 closes the phase that just ended. */
+	public void onOcellusNpc(int npcId) {
+		if (raid() == null || WorldUtils.playerOnUntrackedWorld(client)) {
+			return;
+		}
+		if (npcId == NpcID.TFA_OCELLUS_P2) {
+			contribution.closeOcellusPhase(1);
+		} else if (npcId == NpcID.TFA_OCELLUS_P3) {
+			contribution.closeOcellusPhase(2);
+		}
+	}
+
+	/** The third quadrant-destroy animation on Ocellus phase 3 closes that phase. */
+	public void onOcellusAnimation(int npcId, int animation) {
+		if (raid() == null || WorldUtils.playerOnUntrackedWorld(client) || npcId != NpcID.TFA_OCELLUS_P3) {
+			return;
+		}
+		if (animation == AnimationID.NPC_OCELLUS_QUADRANT_DESTROY_IN) {
+			contribution.noteOcellusQuadrant();
+		}
 	}
 
 	/** Same free-for-all rule as the other raids. A share under the cutoff is not split. */
@@ -426,8 +496,23 @@ public final class FracturedArchiveSession {
 	 * the line. Leave before that message still drops the attempt.
 	 */
 	public void observeHud(boolean hudOpen, boolean chestOpen) {
+		boolean timerOpened = timerKnown && !hudVisible && hudOpen;
+		boolean timerClosed = timerKnown && hudVisible && !hudOpen;
+		boolean chestClosed = chestVisible && !chestOpen;
+		if (timerClosed && stored && claimOpen) {
+			deathsAtClaim = contribution.countedDeaths();
+		}
+		if (timerClosed && hasUnstoredCompletion() && !completionParked) {
+			parkedPoints = contribution.storedPoints();
+			parkedDeaths = contribution.storedDeaths();
+			parkedDeathCount = contribution.countedDeaths();
+			completionParked = true;
+		}
 		hudVisible = hudOpen;
 		chestVisible = chestOpen;
+		if (chestClosed) {
+			clearWaitingChest();
+		}
 		if ((hudOpen || chestOpen) && parked) {
 			parked = false;
 		} else if (claimOpen && stored && pending == null && !parked && !hudOpen && !chestOpen) {
@@ -440,6 +525,7 @@ public final class FracturedArchiveSession {
 				ignoreHud = false;
 			} else {
 				hudWasOpen = false;
+				timerKnown = true;
 				return;
 			}
 		}
@@ -453,12 +539,27 @@ public final class FracturedArchiveSession {
 		} else if (discardArmed && !stored && pending == null && !keptAttempt()) {
 			wipe();
 		}
+		if (timerOpened && stored && claimOpen && !tallyOutlivesClaim) {
+			int deathsAfterClaim = Math.max(0, contribution.countedDeaths() - deathsAtClaim);
+			contribution.beginTrackedRaid(deathsAfterClaim);
+			tallyOutlivesClaim = true;
+		} else if (timerOpened && completionParked && !stored && !tallyOutlivesClaim) {
+			int deathsAfter = Math.max(0, contribution.countedDeaths() - parkedDeathCount);
+			contribution.beginTrackedRaid(deathsAfter);
+			tallyOutlivesClaim = true;
+		} else if (timerOpened && !stored && !claimOpen && contribution.isIdle()) {
+			contribution.beginTrackedRaid();
+		}
+		if (timerOpened) {
+			contribution.noteTeamSize(party);
+		}
+		timerKnown = true;
 		hudWasOpen = hudOpen;
 	}
 
-	/** Boss time, a death, or the completion time. A kill count alone does not keep the attempt. */
+	/** Boss time, an own death, or the completion time. A teammate death does not keep the attempt. */
 	private boolean keptAttempt() {
-		return overall > 0 || deaths > 0 || !bossTimes.isEmpty();
+		return overall > 0 || contribution.hasOwnDeath() || !bossTimes.isEmpty();
 	}
 
 	private boolean hasProgress() {
@@ -498,14 +599,14 @@ public final class FracturedArchiveSession {
 		}
 	}
 
-	/** The side panel is showing a claimed raid whose loot or MVP just changed. */
+	/** The side panel is showing a claimed raid whose loot just changed. */
 	public boolean takeViewUpdate() {
 		boolean update = viewStale;
 		viewStale = false;
 		return update;
 	}
 
-	/** The chest line is open, so a later unique or MVP still belongs to it. */
+	/** The chest line is open, so a later unique still belongs to it. */
 	public boolean isClaimWindowOpen() {
 		return claimOpen;
 	}
@@ -517,35 +618,6 @@ public final class FracturedArchiveSession {
 		}
 		RaidTracker open = liveClaim();
 		return open == null || open.getLootList() == null || open.getLootList().isEmpty();
-	}
-
-	/** Reads the stats-screen MVP name. Only a match, or the text Yes, is stored. */
-	public void captureMvp() {
-		if (client == null || WorldUtils.playerOnUntrackedWorld(client)) {
-			return;
-		}
-		Widget widget;
-		try {
-			widget = client.getWidget(InterfaceID.TfaStats.PARTY_PANEL_MVP_NAME);
-		} catch (RuntimeException ex) {
-			log.warn("Could not read The Fractured Archive MVP", ex);
-			return;
-		}
-		if (widget == null) {
-			return;
-		}
-		String text;
-		try {
-			text = widget.getText();
-		} catch (RuntimeException ex) {
-			log.warn("Could not read The Fractured Archive MVP", ex);
-			return;
-		}
-		String player = "";
-		if (client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null) {
-			player = client.getLocalPlayer().getName();
-		}
-		noteMvp(text, player);
 	}
 
 	public void addUnique(String item, int id, String receiver, boolean own, Long value) {
@@ -628,7 +700,6 @@ public final class FracturedArchiveSession {
 				}
 			}
 		}
-		captureMvp();
 		return store();
 	}
 
@@ -673,7 +744,6 @@ public final class FracturedArchiveSession {
 		raidTracker.setInFracturedArchive(true);
 		raidTracker.setRaidComplete(true);
 		raidTracker.setChestOpened(true);
-		captureMvp();
 		return store();
 	}
 
@@ -714,6 +784,8 @@ public final class FracturedArchiveSession {
 		raidTracker.setOcellusTime(null);
 		raidTracker.setOwnMvp(null);
 		raidTracker.setDeaths(null);
+		raidTracker.setContributionPoints(null);
+		raidTracker.setOwnDeaths(null);
 		raidTracker.setCompletionCount(-1);
 		raidTracker.setUniques(null);
 		raidTracker.setLootList(new ArrayList<>());
@@ -736,7 +808,7 @@ public final class FracturedArchiveSession {
 
 	/**
 	 * The completion message already arrived and the reward window never opened.
-	 * Write one line with the times, team size, deaths, kill count, MVP, and any unique already heard.
+	 * Write one line with the times, team size, kill count, and any unique already heard.
 	 * The chest was not opened, so the loot list is empty. Leave closes the line, so a later unique is ignored.
 	 * A failed append stays queued. The live tracker is detached either way.
 	 */
@@ -811,6 +883,7 @@ public final class FracturedArchiveSession {
 			publish(closing);
 		}
 		clearLive();
+		tallyOutlivesClaim = false;
 		sawHud = false;
 		hudWasOpen = false;
 		discardArmed = false;
@@ -839,8 +912,14 @@ public final class FracturedArchiveSession {
 	public void finished(boolean chestStillOpen) {
 		returnTicks = -1;
 		parked = false;
+		if (chestStillOpen) {
+			chestVisible = true;
+		}
 		if (hasUnstoredCompletion()) {
 			saveCompletedLeave(!chestStillOpen);
+		}
+		if (chestStillOpen) {
+			chestVisible = true;
 		}
 		flushUnwritten();
 		if (pending != null) {
@@ -877,10 +956,6 @@ public final class FracturedArchiveSession {
 		stored = claimOpen;
 		lastClaimed = saved;
 		return saved;
-	}
-
-	private boolean listeningForMvp() {
-		return !WorldUtils.playerOnUntrackedWorld(client) && (claimOpen || sawHud || hasProgress());
 	}
 
 	private RaidTracker openClaim() {
@@ -956,9 +1031,13 @@ public final class FracturedArchiveSession {
 			raidTracker.setKillCountID(nextId);
 			raidTracker.setSplitChoice(null);
 			raidTracker.setOpenClaim(null);
+			raidTracker.setOpenChest(null);
 			raidTracker.setDate(System.currentTimeMillis());
 		}
 		apply(raidTracker);
+		completionParked = false;
+		parkedPoints = null;
+		parkedDeaths = null;
 		claimOpen = true;
 		lastClaimed = raidTracker;
 		stampClaim(raidTracker);
@@ -986,8 +1065,17 @@ public final class FracturedArchiveSession {
 		raidTracker.setOcellusTime(bossTimes.get(ArchiveBoss.OCELLUS));
 		raidTracker.setRaidTime(overall > 0 ? overall : -1);
 		raidTracker.setTeamSize(party);
-		raidTracker.setOwnMvp(Boolean.TRUE.equals(ownMvp) ? Boolean.TRUE : null);
-		raidTracker.setDeaths(deaths);
+		raidTracker.setOwnMvp(null);
+		raidTracker.setDeaths(null);
+		Double points = completionParked ? parkedPoints : contribution.storedPoints();
+		Integer deaths = completionParked ? parkedDeaths : contribution.storedDeaths();
+		if (points == null || deaths == null || !Double.isFinite(points)) {
+			raidTracker.setContributionPoints(null);
+			raidTracker.setOwnDeaths(null);
+		} else {
+			raidTracker.setContributionPoints(points);
+			raidTracker.setOwnDeaths(deaths);
+		}
 		raidTracker.setCompletionCount(killCount > 0 ? killCount : -1);
 		raidTracker.setUniques(drops.isEmpty() ? null : new ArrayList<>(drops));
 		if (raidTracker.getSplitChoice() == null && defaultFfa) {
@@ -1001,8 +1089,13 @@ public final class FracturedArchiveSession {
 		overall = -1;
 		party = -1;
 		killCount = -1;
-		deaths = 0;
-		ownMvp = null;
+		completionParked = false;
+		parkedPoints = null;
+		parkedDeaths = null;
+		if (!tallyOutlivesClaim) {
+			contribution.reset();
+			deathsAtClaim = 0;
+		}
 		drops.clear();
 	}
 
@@ -1132,13 +1225,24 @@ public final class FracturedArchiveSession {
 		return open != null && open.getRaidTime() == seconds;
 	}
 
-	/** Writes whether this line is still accepting a unique. A closed window leaves the key off the line. */
+	/** Writes whether this line is still accepting a unique, and whether its chest is still on screen. */
 	private void stampClaim(RaidTracker target) {
 		if (target == null) {
 			return;
 		}
 		boolean open = claimOpen && (target == lastClaimed || target == pending);
 		target.setOpenClaim(open ? Boolean.TRUE : null);
+		boolean lootEmpty = target.getLootList() == null || target.getLootList().isEmpty();
+		target.setOpenChest(open && chestVisible && lootEmpty ? Boolean.TRUE : null);
+	}
+
+	/** The chest widget closed. The line can still take a unique, but a restart must not fill it. */
+	private void clearWaitingChest() {
+		RaidTracker open = liveClaim();
+		if (open == null || !Boolean.TRUE.equals(open.getOpenChest())) {
+			return;
+		}
+		publish(open);
 	}
 
 	/**
@@ -1240,7 +1344,7 @@ public final class FracturedArchiveSession {
 		return COLOR_TAG.matcher(message).replaceAll("").replace('\u00A0', ' ').trim();
 	}
 
-	/** Same name the chest, the MVP widget, and a teammate broadcast can be compared on. */
+	/** Same name the chest and a teammate broadcast can be compared on. */
 	private static String cleanName(String name) {
 		if (name == null) {
 			return "";

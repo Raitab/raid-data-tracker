@@ -12,17 +12,23 @@ import com.raidtracker.ui.RaidTrackerPanel;
 import com.raidtracker.ui.RaidUniques;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Actor;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.Hitsplat;
+import net.runelite.api.NPC;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.NpcChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
@@ -78,6 +84,7 @@ public class RaidTrackerPlugin extends Plugin
 	private static final Pattern TOA_ROOM_COMPLETE_PATTERN = Pattern.compile("Challenge complete: (?<room>[A-Za-z- ]+).*Duration:.*?(?<duration>(?:(?:(?<hours>\\d+):)?(?:(?<minutes>\\d+):))?(?<seconds>\\d{1,2})(?:\\.(?<milliseconds>\\d+))?)(?:\\. )?.*");
 	private static final Pattern TOA_COMPLETION_PATTERN = Pattern.compile(".*Tombs of Amascut(?:: (?<mode>.*) Mode)? (?<type>total|challenge) completion time:.*?(?<duration>(?:(?:(?<hours>\\d+):)?(?<minutes>\\d+):)?(?<seconds>\\d{1,2})(?:\\.(?<milliseconds>\\d+))?)(?:\\. )?.*");
 	private static final String TOA_EVENT_NAMESPACE = "tombs-of-amascut";
+	private static final String TFA_EVENT_NAMESPACE = "the-fractured-archive";
 	private static final String TOA_EVENT_NAME_POINTS = "raidCompletedPoints";
 
     private static final int TOA_TIMER_WIDGET_ID = 46;
@@ -362,7 +369,7 @@ public class RaidTrackerPlugin extends Plugin
 				if (widgetsKnown && archiveLocationReady()) {
 					boolean archiveWidgets = hudOpen || chestOpen;
 					RaidTracker returned = archive.noteReturnTick(archiveWidgets);
-					settleArchiveResume(archiveWidgets);
+					settleArchiveResume(chestOpen);
 					if (returned != null) {
 						showArchiveClaim(returned);
 						checkRaidPresence();
@@ -394,9 +401,6 @@ public class RaidTrackerPlugin extends Plugin
 				}
 				if (archive.takeRewardClosed()) {
 					archiveEmptyChestTicks = 0;
-				}
-				if (archive.isClaimWindowOpen()) {
-					archive.captureMvp();
 				}
 				if (chestOpen && archiveEmptyChestTicks > 0
 					&& (!archive.isClaimWindowOpen() || archive.openChestNeedsLoot())) {
@@ -443,9 +447,43 @@ public class RaidTrackerPlugin extends Plugin
 		}
 	}
 
+	@Subscribe
+	public void onHitsplatApplied(HitsplatApplied event) {
+		if (archive == null || event.getHitsplat() == null || !(event.getActor() instanceof NPC)) {
+			return;
+		}
+		Hitsplat hitsplat = event.getHitsplat();
+		archive.addHitsplat(hitsplat.isMine(), hitsplat.getHitsplatType(), hitsplat.getAmount());
+	}
+
+	@Subscribe
+	public void onNpcChanged(NpcChanged event) {
+		if (archive == null || event.getNpc() == null) {
+			return;
+		}
+		archive.onOcellusNpc(event.getNpc().getId());
+	}
+
+	@Subscribe
+	public void onAnimationChanged(AnimationChanged event) {
+		Actor actor = event.getActor();
+		if (archive == null || !(actor instanceof NPC)) {
+			return;
+		}
+		archive.onOcellusAnimation(((NPC) actor).getId(), actor.getAnimation());
+	}
+
 	// Thank Adam, LlemonDuck, and jocopa3 for creating PluginMessage event in core for us
 	@Subscribe
 	public void onPluginMessage(PluginMessage message) {
+		if (message.getNamespace().equals(TFA_EVENT_NAMESPACE) && message.getName().equals(TOA_EVENT_NAME_POINTS)) {
+			Object version = message.getData() == null ? null : message.getData().get("version");
+			Object personal = message.getData() == null ? null : message.getData().get("personalPoints");
+			if (archive != null && Integer.valueOf(1).equals(version) && personal instanceof Integer) {
+				archive.noteExternalPoints((Integer) personal);
+			}
+			return;
+		}
 		if (message.getNamespace().equals(TOA_EVENT_NAMESPACE)
                 && message.getName().equals(TOA_EVENT_NAME_POINTS)
                 && (Integer) message.getData().get("version") == 1
@@ -616,16 +654,6 @@ public class RaidTrackerPlugin extends Plugin
             case (InterfaceID.TFA_CHESTS):
                 if (!logArchiveReward(false)) {
                     noteEmptyArchiveChest();
-                }
-                break;
-            case (InterfaceID.TFA_STATS):
-                if (archive == null || WorldUtils.playerOnUntrackedWorld(client)) {
-                    break;
-                }
-                try {
-                    archive.captureMvp();
-                } catch (RuntimeException ex) {
-                    log.warn("Could not read The Fractured Archive MVP", ex);
                 }
                 break;
         }

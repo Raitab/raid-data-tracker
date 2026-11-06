@@ -26,10 +26,16 @@ public class RaidTracker {
     String splitChoice;
 
     /**
-     * The chest line is still accepting a teammate unique or a late chest.
+     * The chest line is still accepting a teammate unique.
      * Absent once that window closes. Left off Chambers, Theatre, and Tombs lines.
      */
     Boolean openClaim;
+
+    /**
+     * This empty line is still waiting for the reward chest that was on screen.
+     * Absent once that widget closes. The raid timer does not set this.
+     */
+    Boolean openChest;
 
     int upperTime = -1;
     int middleTime = -1;
@@ -117,11 +123,24 @@ public class RaidTracker {
     Integer xarthTime;
     Integer ocellusTime;
 
-    /** True when the local player was MVP. Absent from the log otherwise. */
+    /** Read from older Fractured Archive lines. New lines do not write it. */
     Boolean ownMvp;
 
-    /** Team death total from the raid. Null on older lines. A raid with no deaths is 0. */
+    /** Team death total on older Fractured Archive lines. New lines do not write it. */
     Integer deaths;
+
+    /**
+     * Personal points after the death penalty. The other plugin's total when that message
+     * arrives, otherwise this plugin's tally. Null when neither source produced one.
+     * Written only together with {@link #ownDeaths}. Zero is a real total.
+     */
+    Double contributionPoints;
+
+    /**
+     * How many times the local player died. Null when the raid was not tracked.
+     * Written only together with {@link #contributionPoints}. Zero means none.
+     */
+    Integer ownDeaths;
 
     ArrayList<UniqueDrop> uniques;
 

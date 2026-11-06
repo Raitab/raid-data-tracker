@@ -294,9 +294,10 @@ public class RaidTrackerPanel extends PluginPanel {
         JPanel splitsEarnedPanel = getSplitsEarnedPanel();
         JPanel changePurples = getChangePurples();
         JPanel timeSplitsPanel = getTimeSplitsPanel();
-        boolean mvpTab = selectedRaidTab.equals(RaidType.TOB) || selectedRaidTab.equals(RaidType.TFA);
-        JPanel mvpPanel = mvpTab && config.showMVPs() ? getMvpPanel() : null;
-        JPanel pointsPanel = !mvpTab && config.showPoints() ? getPointsPanel() : null;
+        boolean theatreTab = selectedRaidTab.equals(RaidType.TOB);
+        JPanel mvpPanel = theatreTab && config.showMVPs() ? getMvpPanel() : null;
+        JPanel pointsPanel = !theatreTab && !selectedRaidTab.equals(RaidType.TFA) && config.showPoints()
+            ? getPointsPanel() : null;
 
         // Replaces panel.removeAll() to allow for selective component removal when dealing with ToA filter keypresses
         for (Component component : panel.getComponents()) {
@@ -1113,9 +1114,6 @@ public class RaidTrackerPanel extends PluginPanel {
 			case TOB:
 				wrapper.add(mvp, c);
 				break;
-			case TFA:
-				wrapper.add(mvp, c);
-				break;
 			case TOA:
 				wrapper.add(raidLevel, c);
 				break;
@@ -1234,18 +1232,7 @@ public class RaidTrackerPanel extends PluginPanel {
 
 
         if (loaded) {
-            ArrayList<RaidTracker> mvpRaids = selectedRaidTab == RaidType.TFA ? tfaRTList : tobRTList;
-            mvpAmount = mvpRaids.stream().mapToInt(RT -> {
-                if (selectedRaidTab == RaidType.TFA) {
-                    return Boolean.TRUE.equals(RT.getOwnMvp()) ? 1 : 0;
-                }
-                if (RT.isMvpInOwnName()) {
-                    return 1;
-                }
-                return 0;
-            }).sum();
-
-
+            mvpAmount = tobRTList.stream().mapToInt(RT -> RT.isMvpInOwnName() ? 1 : 0).sum();
         }
 
         JLabel textLabel = textPanel("Total MVPs:");
@@ -2219,17 +2206,7 @@ public class RaidTrackerPanel extends PluginPanel {
 					.collect(Collectors.toCollection(ArrayList::new));
 				break;
 			case TFA:
-				if ("My MVP".equals(mvpFilter)) {
-					tempRTList = tfaRTList.stream()
-						.filter(RT -> Boolean.TRUE.equals(RT.getOwnMvp()))
-						.collect(Collectors.toCollection(ArrayList::new));
-				} else if ("Not My MVP".equals(mvpFilter)) {
-					tempRTList = tfaRTList.stream()
-						.filter(RT -> !Boolean.TRUE.equals(RT.getOwnMvp()))
-						.collect(Collectors.toCollection(ArrayList::new));
-				} else {
-					tempRTList = tfaRTList;
-				}
+				tempRTList = tfaRTList;
 				break;
 			default:
                 tempRTList = new ArrayList<>();

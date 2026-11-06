@@ -135,6 +135,8 @@ public class FracturedArchiveTest extends TestCase
 		assertFalse(json.contains("archiveGuardianTime"));
 		assertFalse(json.contains("inFracturedArchive"));
 		assertFalse(json.contains("\"uniques\""));
+		assertFalse(json.contains("contributionPoints"));
+		assertFalse(json.contains("ownDeaths"));
 	}
 
 	@Test
@@ -151,7 +153,6 @@ public class FracturedArchiveTest extends TestCase
 		session.onGameMessage("Someone has died. Total deaths: 4.", true);
 		session.onGameMessage("The Fractured Archive: Total completion time: 20:15.20. Personal best: blabla", false);
 		session.onGameMessage("Your completed Fractured Archive count is: 42.", false);
-		session.noteMvp("Disco Turtle", "Disco Turtle");
 		assertTrue(session.claim());
 
 		JsonObject line = new JsonParser().parse(logLines().get(0)).getAsJsonObject();
@@ -160,8 +161,86 @@ public class FracturedArchiveTest extends TestCase
 		assertFalse(line.has("borkTime"));
 		assertEquals(1215, line.get("raidTime").getAsInt());
 		assertEquals(42, line.get("completionCount").getAsInt());
-		assertEquals(4, line.get("deaths").getAsInt());
-		assertTrue(line.get("ownMvp").getAsBoolean());
+		assertFalse(line.has("deaths"));
+		assertFalse(line.has("ownMvp"));
+		assertFalse(line.has("contributionPoints"));
+		assertFalse(line.has("ownDeaths"));
+	}
+
+	@Test
+	public void trackedInputsAreStoredWithTheChest() throws IOException
+	{
+		openAccount();
+		session.setPartySize(2);
+		session.setOverallTime(500);
+		session.recordBoss(ArchiveBoss.ARCHIVE_GUARDIAN, 80);
+		session.setTrackedInputs(0d, 0);
+		assertTrue(session.claimRewardWindow(
+			Arrays.asList(chestItem("Blood rune", 565, 10, 2_000)),
+			"Disco Turtle"));
+
+		JsonObject zeros = new JsonParser().parse(logLines().get(0)).getAsJsonObject();
+		assertEquals(0d, zeros.get("contributionPoints").getAsDouble(), 0d);
+		assertEquals(0, zeros.get("ownDeaths").getAsInt());
+		assertEquals(1, zeros.getAsJsonArray("lootList").size());
+		assertFalse(zeros.has("ownMvp"));
+		assertFalse(zeros.has("deaths"));
+		assertFalse(zeros.has("purpleChance"));
+		RaidTracker loaded = fw.readFromFile(RaidType.TFA).get(0);
+		assertEquals(0d, loaded.getContributionPoints(), 0d);
+		assertEquals(Integer.valueOf(0), loaded.getOwnDeaths());
+
+		freshSession();
+		session.setPartySize(4);
+		session.setOverallTime(600);
+		session.recordBoss(ArchiveBoss.OCELLUS, 90);
+		session.setTrackedInputs(250.5, 2);
+		assertTrue(session.claim());
+		JsonObject fraction = new JsonParser().parse(logLines().get(1)).getAsJsonObject();
+		assertEquals(250.5, fraction.get("contributionPoints").getAsDouble(), 0d);
+		assertEquals(2, fraction.get("ownDeaths").getAsInt());
+		ArrayList<RaidTracker> both = fw.readFromFile(RaidType.TFA);
+		assertEquals("Blood rune", both.get(0).getLootList().get(0).getName());
+		assertEquals(0d, both.get(0).getContributionPoints(), 0d);
+		assertEquals(Integer.valueOf(0), both.get(0).getOwnDeaths());
+		assertEquals(250.5, both.get(1).getContributionPoints(), 0d);
+
+		freshSession();
+		session.setPartySize(1);
+		session.setOverallTime(100);
+		session.recordBoss(ArchiveBoss.ARCHIVE_GUARDIAN, 40);
+		session.setTrackedInputs(10d, null);
+		assertTrue(session.claim());
+		JsonObject partial = new JsonParser().parse(logLines().get(2)).getAsJsonObject();
+		assertFalse(partial.has("contributionPoints"));
+		assertFalse(partial.has("ownDeaths"));
+	}
+
+	@Test
+	public void rewriteDropsMvpAndTeamDeaths() throws IOException
+	{
+		openAccount();
+		String raw = "{\"raidTime\":400,\"teamSize\":3,\"ownMvp\":true,\"deaths\":4,"
+			+ "\"uniqueID\":\"old-raid\",\"date\":1,\"contributionPoints\":12.5}";
+		Files.write(logFile(), (raw + "\n").getBytes(StandardCharsets.UTF_8));
+
+		RaidTracker loaded = fw.readFromFile(RaidType.TFA).get(0);
+		assertEquals(Boolean.TRUE, loaded.getOwnMvp());
+		assertEquals(Integer.valueOf(4), loaded.getDeaths());
+		assertEquals(12.5, loaded.getContributionPoints(), 0d);
+		assertNull(loaded.getOwnDeaths());
+		assertEquals("old-raid", loaded.getUniqueID());
+
+		loaded.setTeamSize(4);
+		assertTrue(fw.updateRTLog(loaded, RaidType.TFA));
+		JsonObject rewritten = new JsonParser().parse(logLines().get(0)).getAsJsonObject();
+		assertEquals("old-raid", rewritten.get("uniqueID").getAsString());
+		assertEquals(400, rewritten.get("raidTime").getAsInt());
+		assertEquals(4, rewritten.get("teamSize").getAsInt());
+		assertFalse(rewritten.has("ownMvp"));
+		assertFalse(rewritten.has("deaths"));
+		assertFalse(rewritten.has("contributionPoints"));
+		assertFalse(rewritten.has("ownDeaths"));
 	}
 
 	@Test
@@ -200,7 +279,8 @@ public class FracturedArchiveTest extends TestCase
 		JsonObject line = new JsonParser().parse(logLines().get(0)).getAsJsonObject();
 		assertEquals(115, line.get("archiveGuardianTime").getAsInt());
 		assertEquals(1261, line.get("raidTime").getAsInt());
-		assertEquals(2, line.get("deaths").getAsInt());
+		assertFalse(line.has("deaths"));
+		assertFalse(line.has("ownDeaths"));
 		assertEquals(0, line.getAsJsonArray("lootList").size());
 		assertEquals("Rondache", line.getAsJsonArray("uniques").get(0).getAsJsonObject().get("item").getAsString());
 
@@ -240,9 +320,11 @@ public class FracturedArchiveTest extends TestCase
 		ArrayList<RaidTracker> finished = fw.readFromFile(RaidType.TFA);
 		assertEquals(2, finished.size());
 		assertEquals(720, finished.get(0).getRaidTime());
-		assertEquals(Integer.valueOf(3), finished.get(0).getDeaths());
+		assertNull(finished.get(0).getDeaths());
+		assertNull(finished.get(0).getOwnDeaths());
 		assertEquals(Integer.valueOf(90), finished.get(1).getArchiveGuardianTime());
-		assertEquals(Integer.valueOf(0), finished.get(1).getDeaths());
+		assertNull(finished.get(1).getDeaths());
+		assertNull(finished.get(1).getContributionPoints());
 
 		freshSession();
 		session.onGameMessage("Challenge complete: Archive Guardian. Duration: 2:00.00. Total: 2:00.00", false);
@@ -254,7 +336,7 @@ public class FracturedArchiveTest extends TestCase
 		JsonObject dropped = new JsonParser().parse(logLines().get(logLines().size() - 1)).getAsJsonObject();
 		assertEquals(90, dropped.get("archiveGuardianTime").getAsInt());
 		assertFalse(dropped.has("moiaTime"));
-		assertEquals(0, dropped.get("deaths").getAsInt());
+		assertFalse(dropped.has("deaths"));
 	}
 
 	@Test
@@ -330,6 +412,7 @@ public class FracturedArchiveTest extends TestCase
 		session.finished();
 		RaidTracker closed = fw.readFromFile(RaidType.TFA).get(0);
 		assertNull(closed.getOpenClaim());
+		assertNull(closed.getOpenChest());
 
 		RaidTracker live = new RaidTracker();
 		FracturedArchiveSession nextRaid = new FracturedArchiveSession(client, () -> live, () -> fw);
@@ -351,6 +434,7 @@ public class FracturedArchiveTest extends TestCase
 		session.finished(true);
 		RaidTracker held = fw.readFromFile(RaidType.TFA).get(2);
 		assertEquals(Boolean.TRUE, held.getOpenClaim());
+		assertEquals(Boolean.TRUE, held.getOpenChest());
 		assertEquals(500, held.getRaidTime());
 
 		FracturedArchiveSession stale = new FracturedArchiveSession(client, () -> new RaidTracker(), () -> fw);
@@ -374,6 +458,72 @@ public class FracturedArchiveTest extends TestCase
 		assertNull(raids.get(2).getEzekielTime());
 		assertEquals(Integer.valueOf(60), raids.get(3).getEzekielTime());
 		assertEquals("Death rune", raids.get(3).getLootList().get(0).getName());
+	}
+
+	@Test
+	public void timerDoesNotResumeThePreviousLine() throws IOException
+	{
+		openAccount();
+		session.recordBoss(ArchiveBoss.ARCHIVE_GUARDIAN, 70);
+		session.setOverallTime(400);
+		session.finished(true);
+		RaidTracker held = fw.readFromFile(RaidType.TFA).get(0);
+		assertEquals(Boolean.TRUE, held.getOpenChest());
+
+		RaidTracker live = new RaidTracker();
+		FracturedArchiveSession restarted = new FracturedArchiveSession(client, () -> live, () -> fw);
+		assertFalse(restarted.noteResumeTick(false, held, held.getDate() + 1_000));
+		restarted.recordBoss(ArchiveBoss.EZEKIEL, 60);
+		restarted.setOverallTime(500);
+		assertTrue(restarted.claimRewardWindow(
+			Arrays.asList(chestItem("Death rune", 560, 1, 100)),
+			"Disco Turtle"));
+
+		ArrayList<RaidTracker> raids = fw.readFromFile(RaidType.TFA);
+		assertEquals(2, raids.size());
+		assertEquals(Integer.valueOf(70), raids.get(0).getArchiveGuardianTime());
+		assertNull(raids.get(0).getEzekielTime());
+		assertEquals(0, raids.get(0).getLootList().size());
+		assertEquals(Boolean.TRUE, raids.get(0).getOpenChest());
+		assertEquals(Integer.valueOf(60), raids.get(1).getEzekielTime());
+		assertEquals("Death rune", raids.get(1).getLootList().get(0).getName());
+	}
+
+	@Test
+	public void closingTheChestClearsTheWaitingMark() throws IOException
+	{
+		openAccount();
+		namePlayer("Disco Turtle");
+		session.observeHud(false, true);
+		session.setPartySize(2);
+		session.recordBoss(ArchiveBoss.ARCHIVE_GUARDIAN, 70);
+		session.setOverallTime(400);
+		assertTrue(session.claim());
+		RaidTracker waiting = fw.readFromFile(RaidType.TFA).get(0);
+		assertEquals(Boolean.TRUE, waiting.getOpenChest());
+		assertEquals(Boolean.TRUE, waiting.getOpenClaim());
+
+		session.observeHud(false, false);
+		RaidTracker closedChest = fw.readFromFile(RaidType.TFA).get(0);
+		assertNull(closedChest.getOpenChest());
+		assertEquals(Boolean.TRUE, closedChest.getOpenClaim());
+		assertFalse(logLines().get(0).contains("openChest"));
+
+		session.onGameMessage("Other Player found something special: Rondache", false);
+		assertEquals("Rondache", fw.readFromFile(RaidType.TFA).get(0).getUniques().get(0).getItem());
+		assertNull(fw.readFromFile(RaidType.TFA).get(0).getOpenChest());
+
+		RaidTracker latest = fw.readFromFile(RaidType.TFA).get(0);
+		RaidTracker live = new RaidTracker();
+		FracturedArchiveSession later = new FracturedArchiveSession(client, () -> live, () -> fw);
+		assertFalse(later.noteResumeTick(true, latest, latest.getDate() + 1_000));
+		assertTrue(later.claimRewardWindow(
+			Arrays.asList(chestItem("Death rune", 560, 1, 100)),
+			"Disco Turtle"));
+		ArrayList<RaidTracker> raids = fw.readFromFile(RaidType.TFA);
+		assertEquals(2, raids.size());
+		assertTrue(raids.get(0).getLootList() == null || raids.get(0).getLootList().isEmpty());
+		assertEquals("Death rune", raids.get(1).getLootList().get(0).getName());
 	}
 
 	@Test

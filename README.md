@@ -20,6 +20,7 @@ If you find any bugs or problems, feel free to message me on Discord - @raitab.
 ## Changelog:
 ### v1.8.0
 - Added The Fractured Archive. Completed raids are logged under the tfa folder.
+- Personal points and your own deaths are stored on each completed Archive line. Points come from The Fractured Archive plugin when it sends them, and from this plugin otherwise.
 
 ### v1.7.0
 - Changes made to support September 30, 2026, update that raised the max cash limit. Big thanks to [@Brettgod1355](https://github.com/Brettgod1355)

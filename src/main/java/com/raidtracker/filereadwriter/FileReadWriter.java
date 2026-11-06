@@ -55,14 +55,15 @@ public class FileReadWriter {
 		"xarthTime",
 		"ocellusTime",
 		"teamSize",
-		"ownMvp",
-		"deaths",
+		"contributionPoints",
+		"ownDeaths",
 		"completionCount",
 		"lootSplitReceived",
 		"lootSplitPaid",
 		"FreeForAll",
 		"splitChoice",
 		"openClaim",
+		"openChest",
 		"uniques",
 		"lootList",
 		"uniqueID",
@@ -235,10 +236,13 @@ public class FileReadWriter {
 			case "teamSize":
 				int teamSize = raidTracker.getTeamSize();
 				return teamSize >= 1 && teamSize <= 8 ? new JsonPrimitive(teamSize) : null;
-			case "ownMvp":
-				return Boolean.TRUE.equals(raidTracker.getOwnMvp()) ? new JsonPrimitive(true) : null;
-			case "deaths":
-				return raidTracker.getDeaths() == null ? null : new JsonPrimitive(raidTracker.getDeaths());
+			case "contributionPoints":
+				return trackedPoints(raidTracker);
+			case "ownDeaths":
+				if (trackedPoints(raidTracker) == null) {
+					return null;
+				}
+				return new JsonPrimitive(raidTracker.getOwnDeaths());
 			case "lootSplitReceived":
 				return raidTracker.getLootSplitReceived() >= 0 ? new JsonPrimitive(raidTracker.getLootSplitReceived()) : null;
 			case "lootSplitPaid":
@@ -249,6 +253,8 @@ public class FileReadWriter {
 				return splitChoiceValue(raidTracker.getSplitChoice());
 			case "openClaim":
 				return Boolean.TRUE.equals(raidTracker.getOpenClaim()) ? new JsonPrimitive(true) : null;
+			case "openChest":
+				return Boolean.TRUE.equals(raidTracker.getOpenChest()) ? new JsonPrimitive(true) : null;
 			case "completionCount":
 				return raidTracker.getCompletionCount() > 0 ? new JsonPrimitive(raidTracker.getCompletionCount()) : null;
 			case "uniques":
@@ -263,6 +269,16 @@ public class FileReadWriter {
 			default:
 				return null;
 		}
+	}
+
+	/** Both inputs, or neither. A missing or non-finite value leaves both keys off the line. */
+	private JsonElement trackedPoints(RaidTracker raidTracker) {
+		Double points = raidTracker.getContributionPoints();
+		Integer ownDeaths = raidTracker.getOwnDeaths();
+		if (points == null || ownDeaths == null || !Double.isFinite(points)) {
+			return null;
+		}
+		return new JsonPrimitive(points);
 	}
 
 	private JsonElement splitChoiceValue(String choice) {
