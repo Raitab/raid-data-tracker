@@ -1,6 +1,9 @@
 package com.raidtracker.ui;
 
+import com.raidtracker.JavaStrings;
 import com.raidtracker.RaidTracker;
+import com.raidtracker.UniqueDrop;
+import com.raidtracker.archive.FracturedArchiveSession;
 import lombok.Getter;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
@@ -57,7 +60,28 @@ public class SplitChanger extends JPanel {
     }
 
     private JPanel getImagePanel() {
-        AsyncBufferedImage image = itemManager.getImage(getByName(raidTracker.getSpecialLoot()).getItemID(), 1, false);
+        int itemId = RaidUniques.OLMLET.getItemID();
+        String tooltip = raidTracker.getSpecialLoot();
+        if (raidTracker.isInFracturedArchive() && raidTracker.getUniques() != null && !raidTracker.getUniques().isEmpty()) {
+            UniqueDrop first = raidTracker.getUniques().get(0);
+            if (first.getId() > 0) {
+                itemId = first.getId();
+            }
+            StringBuilder names = new StringBuilder();
+            for (UniqueDrop drop : raidTracker.getUniques()) {
+                if (drop == null || drop.getItem() == null) {
+                    continue;
+                }
+                if (names.length() > 0) {
+                    names.append(", ");
+                }
+                names.append(drop.getItem());
+            }
+            tooltip = names.toString();
+        } else if (tooltip != null && !tooltip.isEmpty()) {
+            itemId = getByName(tooltip).getItemID();
+        }
+        AsyncBufferedImage image = itemManager.getImage(itemId, 1, false);
 
         JPanel iconWrapper = new JPanel();
         iconWrapper.setLayout(new BoxLayout(iconWrapper, BoxLayout.Y_AXIS));
@@ -68,7 +92,7 @@ public class SplitChanger extends JPanel {
         icon.setVerticalAlignment(SwingConstants.CENTER);
         icon.setHorizontalAlignment(SwingConstants.CENTER);
         icon.setBorder(new EmptyBorder(0,0,0,0));
-        icon.setToolTipText(raidTracker.getSpecialLoot());
+        icon.setToolTipText(tooltip);
 
 
         image.onLoaded(() ->
@@ -110,6 +134,13 @@ public class SplitChanger extends JPanel {
                 long value = parse(splitReceived.getText());
 
                 if (value != raidTracker.getLootSplitReceived() && value != -5) {
+                    if (raidTracker.isInFracturedArchive()) {
+                        raidTracker.setLootSplitReceived(value);
+                        raidTracker.setSplitAmountLocked(true);
+                        splitReceived.setToolTipText(NumberFormat.getInstance().format(atLeastZero(value)));
+                        variablesChanged();
+                        return;
+                    }
                     raidTracker.setLootSplitReceived(value);
                     if (raidTracker.isFreeForAll()) {
                         raidTracker.setSpecialLootValue(value);
@@ -141,6 +172,9 @@ public class SplitChanger extends JPanel {
         ffa.setBorder(new EmptyBorder(0,15,0,0));
         ffa.setSelected(raidTracker.isFreeForAll());
         ffa.addActionListener((e) -> {
+            if (locked) {
+                return;
+            }
             raidTracker.setFreeForAll(ffa.isSelected());
 
             locked = true;
@@ -166,7 +200,7 @@ public class SplitChanger extends JPanel {
         JLabel receivedBy = textPanel("received by: ");
         receivedBy.setForeground(ColorScheme.LIGHT_GRAY_COLOR.brighter());
 
-        JLabel receiver = textPanel(fixSpaces(raidTracker.getSpecialLootReceiver()));
+        JLabel receiver = textPanel(receiverText());
         receiver.setForeground(ColorScheme.LIGHT_GRAY_COLOR.brighter());
 
         ReceivedWrapper.add(receivedBy);
@@ -181,7 +215,14 @@ public class SplitChanger extends JPanel {
         teamSizeLabel.setHorizontalAlignment(SwingConstants.LEFT);
         teamSizeWrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-        SpinnerNumberModel model = new SpinnerNumberModel(Math.min(Math.max(1, raidTracker.getTeamSize()), 100), 1, 100, 1);
+        int teamLimit = raidTracker.isInFracturedArchive() ? 8 : 100;
+        int currentTeam = raidTracker.getTeamSize();
+        if (currentTeam < 1) {
+            currentTeam = 1;
+        } else if (currentTeam > teamLimit) {
+            currentTeam = teamLimit;
+        }
+        SpinnerNumberModel model = new SpinnerNumberModel(currentTeam, 1, teamLimit, 1);
         JSpinner teamSize = new JSpinner(model);
         teamSize.setBackground(ColorScheme.DARKER_GRAY_COLOR.darker());
         Component editor = teamSize.getEditor();
@@ -190,8 +231,14 @@ public class SplitChanger extends JPanel {
         spinnerTextField.setColumns(2);
         teamSize.addChangeListener(e -> {
             locked = true;
-            raidTracker.setTeamSize(Math.min(Math.max(1, Integer.parseInt(teamSize.getValue().toString())), 100));
-            setSplit();
+            raidTracker.setTeamSize(Math.min(Math.max(1, Integer.parseInt(teamSize.getValue().toString())), teamLimit));
+            if (raidTracker.isInFracturedArchive()) {
+                raidTracker.setSplitAmountLocked(false);
+                FracturedArchiveSession.recalculateSplits(raidTracker, raidTrackerPanel.ffaCutoff());
+                ffa.setSelected(raidTracker.isFreeForAll());
+            } else {
+                setSplit();
+            }
             splitReceived.setText(format(atLeastZero(raidTracker.getLootSplitReceived())));
             splitReceived.setToolTipText(NumberFormat.getInstance().format(atLeastZero(raidTracker.getLootSplitReceived())));
 
@@ -232,6 +279,13 @@ public class SplitChanger extends JPanel {
     }
 
     private void setFFA() {
+        if (raidTracker.isInFracturedArchive()) {
+            raidTracker.setSplitAmountLocked(false);
+            raidTracker.setSplitChoice(RaidTracker.SPLIT_CHOICE_FFA);
+            raidTracker.setFreeForAll(true);
+            FracturedArchiveSession.recalculateSplits(raidTracker, raidTrackerPanel.ffaCutoff());
+            return;
+        }
         boolean inOwnName = raidTracker.isSpecialLootInOwnName();
 
         if (inOwnName) {
@@ -245,6 +299,13 @@ public class SplitChanger extends JPanel {
     }
 
     private void setSplit() {
+        if (raidTracker.isInFracturedArchive()) {
+            raidTracker.setSplitAmountLocked(false);
+            raidTracker.setSplitChoice(RaidTracker.SPLIT_CHOICE_SPLIT);
+            raidTracker.setFreeForAll(false);
+            FracturedArchiveSession.recalculateSplits(raidTracker, raidTrackerPanel.ffaCutoff());
+            return;
+        }
         boolean inOwnName = raidTracker.isSpecialLootInOwnName();
 
         long splitSize = raidTracker.getSpecialLootValue() / raidTracker.getTeamSize();
@@ -258,6 +319,23 @@ public class SplitChanger extends JPanel {
 
             raidTracker.setLootSplitReceived(splitSize);
         }
+    }
+
+    private String receiverText() {
+        if (raidTracker.isInFracturedArchive() && raidTracker.getUniques() != null && !raidTracker.getUniques().isEmpty()) {
+            StringBuilder text = new StringBuilder();
+            for (UniqueDrop drop : raidTracker.getUniques()) {
+                if (drop == null) {
+                    continue;
+                }
+                if (text.length() > 0) {
+                    text.append(", ");
+                }
+                text.append(drop.getReceiver() == null ? "" : drop.getReceiver());
+            }
+            return fixSpaces(text.toString());
+        }
+        return fixSpaces(raidTracker.getSpecialLootReceiver());
     }
 
     private JLabel textPanel(String text) {
@@ -366,7 +444,7 @@ public class SplitChanger extends JPanel {
 
     public String fixSpaces(String s) {
         //replace null characters with spaces
-        return unescapeJavaString(s.replace("ï¿½", " ").replace("Â ", " "));
+        return JavaStrings.unescapeJavaString(s.replace("ï¿½", " ").replace("Â ", " "));
     }
 
     private RaidUniques getByName(String name) {
@@ -388,87 +466,14 @@ public class SplitChanger extends JPanel {
 				return RaidUniques.TOB_UNIQUES;
 			case TOA:
 				return RaidUniques.TOA_UNIQUES;
+			case TFA:
+				return RaidUniques.TFA_UNIQUES;
             default:
                 return null;
 		}
     }
 
     //from stackoverflow
-    public String unescapeJavaString(String st) {
-
-        if (st == null) {
-            return null;
-        }
-
-        StringBuilder sb = new StringBuilder(st.length());
-
-        for (int i = 0; i < st.length(); i++) {
-            char ch = st.charAt(i);
-            if (ch == '\\') {
-                char nextChar = (i == st.length() - 1) ? '\\' : st
-                        .charAt(i + 1);
-                // Octal escape?
-                if (nextChar >= '0' && nextChar <= '7') {
-                    String code = "" + nextChar;
-                    i++;
-                    if ((i < st.length() - 1) && st.charAt(i + 1) >= '0'
-                            && st.charAt(i + 1) <= '7') {
-                        code += st.charAt(i + 1);
-                        i++;
-                        if ((i < st.length() - 1) && st.charAt(i + 1) >= '0'
-                                && st.charAt(i + 1) <= '7') {
-                            code += st.charAt(i + 1);
-                            i++;
-                        }
-                    }
-                    sb.append((char) Integer.parseInt(code, 8));
-                    continue;
-                }
-                switch (nextChar) {
-                    case '\\':
-                        break;
-                    case 'b':
-                        ch = '\b';
-                        break;
-                    case 'f':
-                        ch = '\f';
-                        break;
-                    case 'n':
-                        ch = '\n';
-                        break;
-                    case 'r':
-                        ch = '\r';
-                        break;
-                    case 't':
-                        ch = '\t';
-                        break;
-                    case '\"':
-                        ch = '\"';
-                        break;
-                    case '\'':
-                        ch = '\'';
-                        break;
-                    // Hex Unicode: u????
-                    case 'u':
-                        if (i >= st.length() - 5) {
-                            ch = 'u';
-                            break;
-                        }
-                        int code = Integer.parseInt(
-                                "" + st.charAt(i + 2) + st.charAt(i + 3)
-                                        + st.charAt(i + 4) + st.charAt(i + 5), 16);
-                        sb.append(Character.toChars(code));
-                        i += 5;
-                        continue;
-                }
-                i++;
-            }
-            sb.append(ch);
-        }
-        return sb.toString();
-    }
-
-    //also from stackoverflow
     @FunctionalInterface
     public interface SimpleDocumentListener extends DocumentListener {
         void update(DocumentEvent e);

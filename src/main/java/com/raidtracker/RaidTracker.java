@@ -20,6 +20,23 @@ public class RaidTracker {
 	boolean inTombsOfAmascut = false;
     boolean FreeForAll = false;
 
+    /** Player or default setting. "ffa" or "split". Absent means the cutoff still decides. */
+    public static final String SPLIT_CHOICE_FFA = "ffa";
+    public static final String SPLIT_CHOICE_SPLIT = "split";
+    String splitChoice;
+
+    /**
+     * The chest line is still accepting a teammate unique.
+     * Absent once that window closes. Left off Chambers, Theatre, and Tombs lines.
+     */
+    Boolean openClaim;
+
+    /**
+     * This empty line is still waiting for the reward chest that was on screen.
+     * Absent once that widget closes. The raid timer does not set this.
+     */
+    Boolean openChest;
+
     int upperTime = -1;
     int middleTime = -1;
     int lowerTime = -1;
@@ -56,6 +73,8 @@ public class RaidTracker {
     boolean petInMyName = false;
     long lootSplitReceived = -1;
     long lootSplitPaid = -1;
+    /** A typed Archive split amount. A later unique keeps it. Left off every log line. */
+    transient boolean splitAmountLocked;
     ArrayList<RaidTrackerItem> lootList = new ArrayList<>();
 
     int maidenTime = -1;
@@ -90,6 +109,40 @@ public class RaidTracker {
 	int zebakTime = -1;
 	int wardensTime = -1;
 	int toaCompTime = -1;
+
+    /** Folder flag for The Fractured Archive. Left off the log line. */
+    transient boolean inFracturedArchive = false;
+
+    /** Boss durations in seconds. A skipped fight stays null and is left out of the line. */
+    Integer archiveGuardianTime;
+    Integer ezekielTime;
+    Integer borkTime;
+    Integer moiaTime;
+    Integer dreadnothTime;
+    Integer dagonhaiTime;
+    Integer xarthTime;
+    Integer ocellusTime;
+
+    /** Read from older Fractured Archive lines. New lines do not write it. */
+    Boolean ownMvp;
+
+    /** Team death total on older Fractured Archive lines. New lines do not write it. */
+    Integer deaths;
+
+    /**
+     * Personal points after the death penalty. The other plugin's total when that message
+     * arrives, otherwise this plugin's tally. Null when neither source produced one.
+     * Written only together with {@link #ownDeaths}. Zero is a real total.
+     */
+    Double contributionPoints;
+
+    /**
+     * How many times the local player died. Null when the raid was not tracked.
+     * Written only together with {@link #contributionPoints}. Zero means none.
+     */
+    Integer ownDeaths;
+
+    ArrayList<UniqueDrop> uniques;
 
     //Every RaidTracker has a unique uniqueID but not necessarily a unique killCountID, if there are multiple drops.
     String uniqueID = UUID.randomUUID().toString();

@@ -2,7 +2,7 @@
 
 ### Can be installed through the RuneLite Plugin Hub, under the name `Raid Data Tracker`
 
-Logs CoX, ToB, and ToA data, like purple splits, total points (in COX), or the amount of MVPs (in TOB). The data can be viewed in a side panel.
+Logs CoX, ToB, ToA, and The Fractured Archive, like purple splits, total points (in COX), or the amount of MVPs (in TOB). The data can be viewed in a side panel.
 
 ## Images
 <div class="row">
@@ -12,12 +12,16 @@ Logs CoX, ToB, and ToA data, like purple splits, total points (in COX), or the a
 </div>
 
 ## Data Storage
-Data is stored at `~/.runelite/raid-data-tracker/RAID/raid_tracker_data.log`, where `RAID` is either cox, tob, or toa.
+Data is stored at `~/.runelite/raid-data tracker/<character name>/RAID/raid_tracker_data.log`, where `RAID` is cox, tob, toa, or tfa.
 
 ## Bugs & Problems
 If you find any bugs or problems, feel free to message me on Discord - @raitab.
 
 ## Changelog:
+### v1.8.0
+- Added The Fractured Archive. Completed raids are logged under the tfa folder.
+- Personal points and your own deaths are stored on each completed Archive line. Points come from The Fractured Archive plugin when it sends them, and from this plugin otherwise.
+
 ### v1.7.0
 - Changes made to support September 30, 2026, update that raised the max cash limit. Big thanks to [@Brettgod1355](https://github.com/Brettgod1355)
 - Maintenance updates

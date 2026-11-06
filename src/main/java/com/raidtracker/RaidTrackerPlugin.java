@@ -3,23 +3,32 @@ package com.raidtracker;
 import com.google.inject.Binder;
 import com.google.inject.Inject;
 import com.google.inject.Provides;
+import com.raidtracker.archive.FracturedArchiveSession;
 import com.raidtracker.filereadwriter.FileReadWriter;
 import com.raidtracker.toapointstracker.module.ComponentManager;
 import com.raidtracker.toapointstracker.module.TombsOfAmascutModule;
 import com.raidtracker.toapointstracker.pointstracker.PointsTracker;
 import com.raidtracker.ui.RaidTrackerPanel;
+import com.raidtracker.ui.RaidUniques;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Actor;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.Hitsplat;
+import net.runelite.api.NPC;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.NpcChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
@@ -75,6 +84,7 @@ public class RaidTrackerPlugin extends Plugin
 	private static final Pattern TOA_ROOM_COMPLETE_PATTERN = Pattern.compile("Challenge complete: (?<room>[A-Za-z- ]+).*Duration:.*?(?<duration>(?:(?:(?<hours>\\d+):)?(?:(?<minutes>\\d+):))?(?<seconds>\\d{1,2})(?:\\.(?<milliseconds>\\d+))?)(?:\\. )?.*");
 	private static final Pattern TOA_COMPLETION_PATTERN = Pattern.compile(".*Tombs of Amascut(?:: (?<mode>.*) Mode)? (?<type>total|challenge) completion time:.*?(?<duration>(?:(?:(?<hours>\\d+):)?(?<minutes>\\d+):)?(?<seconds>\\d{1,2})(?:\\.(?<milliseconds>\\d+))?)(?:\\. )?.*");
 	private static final String TOA_EVENT_NAMESPACE = "tombs-of-amascut";
+	private static final String TFA_EVENT_NAMESPACE = "the-fractured-archive";
 	private static final String TOA_EVENT_NAME_POINTS = "raidCompletedPoints";
 
     private static final int TOA_TIMER_WIDGET_ID = 46;
@@ -113,6 +123,9 @@ public class RaidTrackerPlugin extends Plugin
 	@Setter
 	private RaidTrackerPanel panel;
 	private NavigationButton navButton;
+	private FracturedArchiveSession archive;
+	/** Ticks left before an empty reward container is accepted as the real chest. */
+	private int archiveEmptyChestTicks;
 
 	@Inject
 	private ConfigManager configManager;
@@ -149,6 +162,11 @@ public class RaidTrackerPlugin extends Plugin
 
 		clientToolbar.addNavigation(navButton);
 
+		archive = new FracturedArchiveSession(client, () -> raidTracker, () -> fw);
+		archive.setSplitRules(config.defaultFFA(), config.FFACutoff());
+		archive.setUniquePrice(this::archiveUniquePrice);
+		panel.setLiveArchiveRaid(archive::liveClaim);
+
 		if (componentManager == null) {
 			componentManager = injector.getInstance(ComponentManager.class);
 		}
@@ -156,15 +174,22 @@ public class RaidTrackerPlugin extends Plugin
 
 		if (client.getGameState().equals(GameState.LOGGED_IN) || client.getGameState().equals(GameState.LOADING))
 		{
+			bindAccountFolder();
 			SwingUtilities.invokeLater(() -> panel.loadRTList());
 		}
 	}
 
 	@Override
 	protected void shutDown() {
-		raidTracker.setInRaidChambers(false);
-		clientToolbar.removeNavigation(navButton);
-		reset();
+		try {
+			raidTracker.setInRaidChambers(false);
+			clientToolbar.removeNavigation(navButton);
+			finishArchiveNow(archiveChestVisible());
+		} finally {
+			if (componentManager != null) {
+				componentManager.onPluginStop();
+			}
+		}
 	}
 
 	@Subscribe
@@ -172,12 +197,20 @@ public class RaidTrackerPlugin extends Plugin
 		if (!e.getGroup().equals(RaidTrackerConfig.CONFIG_GROUP)) {
 			return;
 		}
+		if (archive != null) {
+			archive.setSplitRules(config.defaultFFA(), config.FFACutoff());
+		}
 		panel.loadRTList();
 	}
 
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event) {
 		if (WorldUtils.playerOnBetaWorld(client)) {
+			return;
+		}
+
+		// A stuck Tombs raid-level varbit would otherwise reset this raid or mark the tracker as Tombs.
+		if (archive != null && archive.isEngaged()) {
 			return;
 		}
 
@@ -265,9 +298,8 @@ public class RaidTrackerPlugin extends Plugin
 
 		if (event.getGameState() == GameState.LOGGING_IN)
 		{
-			fw.updateUsername(client.getUsername());
-			SwingUtilities.invokeLater(() -> panel.loadRTList());
-
+			// The login name is often blank here. The character folder is set once the player exists.
+			bindAccountFolder();
 		}
 
 		if (client.getGameState() == GameState.LOGGED_IN) {
@@ -282,13 +314,17 @@ public class RaidTrackerPlugin extends Plugin
 		else if (client.getGameState() == GameState.LOGIN_SCREEN
 				|| client.getGameState() == GameState.CONNECTION_LOST)
 		{
+			// Keep the attempt. A hop and shutdown write it immediately. Logout may come back to the same chest.
+			if (archive != null) {
+				archive.noteGameLeft();
+			}
 			raidTracker.setLoggedIn(false);
             isFirstGameTick = true;
 		}
 		else if (client.getGameState() == GameState.HOPPING)
 		{
             isFirstGameTick = true;
-			reset();
+			finishArchiveNow();
 		}
 	}
 
@@ -312,11 +348,94 @@ public class RaidTrackerPlugin extends Plugin
             isFirstGameTick = false;
             raidTracker.setProfileType(String.valueOf(RuneScapeProfileType.getCurrent(client)));
             raidTracker.setAccountHash(client.getAccountHash());
+            bindAccountFolder();
             SwingUtilities.invokeLater(() -> panel.loadRTList());
         }
 
+		if (archive != null) {
+			try {
+				boolean hudOpen = false;
+				boolean chestOpen = false;
+				boolean widgetsKnown = true;
+				try {
+					hudOpen = client.getWidget(InterfaceID.TfaHud.RAID_TIMER) != null;
+					chestOpen = client.getWidget(InterfaceID.TfaChests.ITEMS) != null;
+				} catch (RuntimeException ex) {
+					log.warn("Could not read The Fractured Archive interface", ex);
+					hudOpen = false;
+					chestOpen = false;
+					widgetsKnown = false;
+				}
+				if (widgetsKnown && archiveLocationReady()) {
+					boolean archiveWidgets = hudOpen || chestOpen;
+					RaidTracker returned = archive.noteReturnTick(archiveWidgets);
+					settleArchiveResume(chestOpen);
+					if (returned != null) {
+						showArchiveClaim(returned);
+						checkRaidPresence();
+						checkTobPresence();
+						checkToaPresence();
+					}
+				}
+				if ((hudOpen || chestOpen) && archive.foreignTracker()) {
+					replaceRaidTracker();
+				}
+				if (hudOpen) {
+					archive.setPartySize(archivePartySize());
+				}
+				if (widgetsKnown) {
+					archive.observeHud(hudOpen, chestOpen);
+				}
+				RaidTracker parkedRaid = archive.takeDepartedRaid();
+				boolean releaseLive = archive.takeLiveReset();
+				if (parkedRaid != null || releaseLive) {
+					archiveEmptyChestTicks = 0;
+					if (parkedRaid != null) {
+						showArchiveClaim(parkedRaid);
+					} else {
+						replaceRaidTracker();
+					}
+					checkRaidPresence();
+					checkTobPresence();
+					checkToaPresence();
+				}
+				if (archive.takeRewardClosed()) {
+					archiveEmptyChestTicks = 0;
+				}
+				if (chestOpen && archiveEmptyChestTicks > 0
+					&& (!archive.isClaimWindowOpen() || archive.openChestNeedsLoot())) {
+					if (!logArchiveReward(false)) {
+						archiveEmptyChestTicks--;
+						if (archiveEmptyChestTicks == 0) {
+							logArchiveReward(true);
+						}
+					}
+				} else if (!chestOpen) {
+					archiveEmptyChestTicks = 0;
+				}
+				RaidTracker dirtyArchive = archive.takeDirty();
+				if (dirtyArchive != null && fw.updateRTLog(dirtyArchive, RaidType.TFA)) {
+					archive.markPersisted();
+				}
+				if (archive.takeViewUpdate()) {
+					SwingUtilities.invokeLater(() -> {
+						if (panel != null) {
+							panel.updateView(true);
+						}
+					});
+				}
+				RaidTracker savedArchive = archive.retryPending();
+				if (savedArchive != null) {
+					showArchiveClaim(savedArchive);
+				}
+			} catch (RuntimeException ex) {
+				log.warn("Could not retry The Fractured Archive log", ex);
+			}
+		}
+
 		int WIDGET_TIMER = WidgetUtil.packComponentId(InterfaceID.TOA_HUD, TOA_TIMER_WIDGET_ID);
-		if (raidTracker.isInTombsOfAmascut() && client.getWidget(WIDGET_TIMER) != null) {
+		if ((archive == null || !archive.isEngaged())
+			&& raidTracker.isInTombsOfAmascut() && client.getWidget(WIDGET_TIMER) != null) {
 			if (!Objects.equals(Objects.requireNonNull(client.getWidget(WIDGET_TIMER)).getText(), "00:00")
                     && !Objects.equals(Objects.requireNonNull(client.getWidget(WIDGET_TIMER)).getText(), "0:00.00")
                     && !raidStarted
@@ -328,9 +447,43 @@ public class RaidTrackerPlugin extends Plugin
 		}
 	}
 
+	@Subscribe
+	public void onHitsplatApplied(HitsplatApplied event) {
+		if (archive == null || event.getHitsplat() == null || !(event.getActor() instanceof NPC)) {
+			return;
+		}
+		Hitsplat hitsplat = event.getHitsplat();
+		archive.addHitsplat(hitsplat.isMine(), hitsplat.getHitsplatType(), hitsplat.getAmount());
+	}
+
+	@Subscribe
+	public void onNpcChanged(NpcChanged event) {
+		if (archive == null || event.getNpc() == null) {
+			return;
+		}
+		archive.onOcellusNpc(event.getNpc().getId());
+	}
+
+	@Subscribe
+	public void onAnimationChanged(AnimationChanged event) {
+		Actor actor = event.getActor();
+		if (archive == null || !(actor instanceof NPC)) {
+			return;
+		}
+		archive.onOcellusAnimation(((NPC) actor).getId(), actor.getAnimation());
+	}
+
 	// Thank Adam, LlemonDuck, and jocopa3 for creating PluginMessage event in core for us
 	@Subscribe
 	public void onPluginMessage(PluginMessage message) {
+		if (message.getNamespace().equals(TFA_EVENT_NAMESPACE) && message.getName().equals(TOA_EVENT_NAME_POINTS)) {
+			Object version = message.getData() == null ? null : message.getData().get("version");
+			Object personal = message.getData() == null ? null : message.getData().get("personalPoints");
+			if (archive != null && Integer.valueOf(1).equals(version) && personal instanceof Integer) {
+				archive.noteExternalPoints((Integer) personal);
+			}
+			return;
+		}
 		if (message.getNamespace().equals(TOA_EVENT_NAMESPACE)
                 && message.getName().equals(TOA_EVENT_NAME_POINTS)
                 && (Integer) message.getData().get("version") == 1
@@ -497,7 +650,128 @@ public class RaidTrackerPlugin extends Plugin
             case (InterfaceID.TOA_LOBBY):
                 SwingUtilities.invokeLater(() -> panel.showWarningView());
                 break;
+
+            case (InterfaceID.TFA_CHESTS):
+                if (!logArchiveReward(false)) {
+                    noteEmptyArchiveChest();
+                }
+                break;
         }
+	}
+
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event) {
+		if (event.getContainerId() != InventoryID.TFA_CHESTS || archive == null) {
+			return;
+		}
+		// A full chest line already has its items. A line resumed before the container filled still needs them.
+		if (archive.isClaimWindowOpen() && !archive.openChestNeedsLoot()) {
+			return;
+		}
+		boolean chestOpen = false;
+		try {
+			chestOpen = client.getWidget(InterfaceID.TfaChests.ITEMS) != null;
+		} catch (RuntimeException ex) {
+			log.warn("Could not read The Fractured Archive chest", ex);
+			return;
+		}
+		if (!chestOpen) {
+			return;
+		}
+		if (!logArchiveReward(false)) {
+			noteEmptyArchiveChest();
+		}
+	}
+
+	/**
+	 * Writes the open reward chest. An empty container on the first event is not the chest yet:
+	 * the item container often fills on a later tick. {@code allowEmpty} writes that later read.
+	 * The log is written even when the side panel is closed.
+	 */
+	private boolean logArchiveReward(boolean allowEmpty) {
+		if (archive == null || WorldUtils.playerOnUntrackedWorld(client)) {
+			return false;
+		}
+		// The chest can load before the first settle tick. Resume first so this container updates that row.
+		settleArchiveResume(true);
+		if (archive.foreignTracker()) {
+			replaceRaidTracker();
+		}
+		try {
+			ItemContainer archiveChest = client.getItemContainer(InventoryID.TFA_CHESTS);
+			if (archiveChest == null || archiveChest.getItems() == null) {
+				return false;
+			}
+			ArrayList<RaidTrackerItem> loot = lootListFactory(archiveChest.getItems());
+			if (loot.isEmpty() && !allowEmpty) {
+				return false;
+			}
+			String archivePlayer = "";
+			if (client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null) {
+				archivePlayer = client.getLocalPlayer().getName();
+			}
+			if (!archive.claimRewardWindow(loot, archivePlayer)) {
+				return false;
+			}
+			archiveEmptyChestTicks = 0;
+			showArchiveClaim(archive.claimedRaid());
+			return true;
+		} catch (RuntimeException ex) {
+			log.warn("Could not log The Fractured Archive reward window", ex);
+			return false;
+		}
+	}
+
+	private void noteEmptyArchiveChest() {
+		if (archive == null || archiveEmptyChestTicks > 0 || WorldUtils.playerOnUntrackedWorld(client)) {
+			return;
+		}
+		if (archive.isClaimWindowOpen() && !archive.openChestNeedsLoot()) {
+			return;
+		}
+		try {
+			ItemContainer chest = client.getItemContainer(InventoryID.TFA_CHESTS);
+			if (chest != null && chest.getItems() != null) {
+				archiveEmptyChestTicks = 2;
+			}
+		} catch (RuntimeException ex) {
+			log.warn("Could not read The Fractured Archive chest", ex);
+		}
+	}
+
+	private int archivePartySize() {
+		int[] orbs = {
+			InterfaceID.TfaHud._0_CONTAINER,
+			InterfaceID.TfaHud._1_CONTAINER,
+			InterfaceID.TfaHud._2_CONTAINER,
+			InterfaceID.TfaHud._3_CONTAINER,
+			InterfaceID.TfaHud._4_CONTAINER,
+			InterfaceID.TfaHud._5_CONTAINER,
+			InterfaceID.TfaHud._6_CONTAINER,
+			InterfaceID.TfaHud._7_CONTAINER
+		};
+		int count = 0;
+		for (int orb : orbs) {
+			Widget widget;
+			try {
+				widget = client.getWidget(orb);
+				if (widget != null && !widget.isHidden()) {
+					count++;
+				}
+			} catch (RuntimeException ex) {
+				log.warn("Could not read a Fractured Archive party orb", ex);
+			}
+		}
+		return count;
+	}
+
+	private long archiveUniquePrice(RaidUniques unique) {
+		try {
+			return getItemPrice(unique.getItemID());
+		} catch (RuntimeException ex) {
+			log.warn("Could not price a Fractured Archive unique", ex);
+			return -1L;
+		}
 	}
 
 	private String getWidgetText(Widget widget) {
@@ -530,10 +804,50 @@ public class RaidTrackerPlugin extends Plugin
 			playerName = Text.toJagexName(client.getLocalPlayer().getName());
 		}
 
+		if (archive != null && event.getType() == ChatMessageType.GAMEMESSAGE && !WorldUtils.playerOnUntrackedWorld(client)) {
+			try {
+				String archiveMessage = JavaStrings.unescapeJavaString(Text.removeTags(event.getMessage())).replace("\u00A0", " ");
+				boolean archiveMessageRecognized = archive.isArchiveMessage(archiveMessage);
+				if (archiveMessageRecognized && archive.foreignTracker()) {
+					replaceRaidTracker();
+				}
+				boolean raidHudOpen = false;
+				try {
+					raidHudOpen = client.getWidget(InterfaceID.TfaHud.RAID_TIMER) != null;
+				} catch (RuntimeException ex) {
+					log.warn("Could not read The Fractured Archive interface", ex);
+					raidHudOpen = false;
+				}
+				archive.onGameMessage(archiveMessage, raidHudOpen);
+				// A successful leave sets both. The reset has to be taken even when the raid is present,
+				// or the next game message replaces the live tracker again.
+				RaidTracker departedArchive = archive.takeDepartedRaid();
+				boolean resetLive = archive.takeLiveReset();
+				if (departedArchive != null || resetLive) {
+					showArchiveClaim(departedArchive);
+				}
+				if (archive.takeViewUpdate() && panel != null) {
+					SwingUtilities.invokeLater(() -> {
+						if (panel != null) {
+							panel.updateView(true);
+						}
+					});
+				}
+				if (archive.takeRewardClosed()) {
+					archiveEmptyChestTicks = 0;
+				}
+				if (archiveMessageRecognized || archive.isEngaged()) {
+					return;
+				}
+			} catch (RuntimeException ex) {
+				log.warn("Could not read The Fractured Archive chat", ex);
+			}
+		}
+
 		if ((raidTracker.isInRaidChambers() || raidTracker.isInTheatreOfBlood() || raidTracker.isInTombsOfAmascut()) &&
 			(event.getType() == ChatMessageType.FRIENDSCHATNOTIFICATION || event.getType() == ChatMessageType.GAMEMESSAGE)) {
 			//unescape java to avoid unicode
-			String message = unescapeJavaString(Text.removeTags(event.getMessage())).replaceAll("\u00A0", " ");
+			String message = JavaStrings.unescapeJavaString(Text.removeTags(event.getMessage())).replaceAll("\u00A0", " ");
             Matcher m;
 
 			// Fixes issue with inconsistent resets due to
@@ -724,12 +1038,12 @@ public class RaidTrackerPlugin extends Plugin
                 raidTracker.setRaidTime(stringTimeToSeconds(m.group("duration")));
             }
 
-            if (raidTracker.isRaidComplete() && message.contains("Team size:")) {
+            if (!raidTracker.isInFracturedArchive() && raidTracker.isRaidComplete() && message.contains("Team size:")) {
 				raidTracker.setRaidTime(stringTimeToSeconds(message.split("Duration: ")[1].split(" ")[0]));
 			}
 
 			//works for tob
-			if (message.contains("count is:")) {
+			if (!raidTracker.isInFracturedArchive() && message.contains("count is:")) {
 				raidTracker.setChallengeMode(message.contains("Chambers of Xeric Challenge Mode"));
 				raidTracker.setCompletionCount(parseInt(message.split("count is:")[1].trim().replace(".", "")));
 				if (raidTracker.isInTheatreOfBlood()) {
@@ -746,6 +1060,8 @@ public class RaidTrackerPlugin extends Plugin
 				}
 			}
 
+			// A Fractured Archive unique stays on the raid line. Clan chat about a drop is not a second line.
+			if (!raidTracker.isInFracturedArchive()) {
 			// Only special loot should contain the " - " (except for the raid complete message in Cox)
 			if (raidTracker.isRaidComplete() && message.contains(" - ") && !message.startsWith(RAID_COMPLETE_MESSAGE_COX)) {
 				//in case of multiple purples, a new purple is stored on a new line in the file, so a new raidtracker object will be used and written to the file
@@ -864,6 +1180,7 @@ public class RaidTrackerPlugin extends Plugin
 					raidTracker.setPetInMyName(inOwnName);
 				}
 			}
+			}
 		}
 	}
 
@@ -893,18 +1210,22 @@ public class RaidTrackerPlugin extends Plugin
 	public ArrayList<RaidTrackerItem> lootListFactory(Item[] items)
 	{
 		ArrayList<RaidTrackerItem> lootList = new ArrayList<>();
+		if (items == null) {
+			return lootList;
+		}
 		Arrays.stream(items)
-				.filter(item -> item.getId() > -1)
+				.filter(item -> item != null && item.getId() > -1)
 				.forEach(item -> {
 					ItemComposition comp = itemManager.getItemComposition(item.getId());
-					lootList.add(new RaidTrackerItem() {
-						{
-							name = comp.getName();
-							id = comp.getId();
-							quantity = item.getQuantity();
-							price = getItemPrice(id) * quantity;
-						}
-					});
+					if (comp == null || comp.getName() == null) {
+						return;
+					}
+					RaidTrackerItem tracked = new RaidTrackerItem();
+					tracked.setName(comp.getName());
+					tracked.setId(comp.getId());
+					tracked.setQuantity(item.getQuantity());
+					tracked.setPrice(getItemPrice(comp.getId()) * item.getQuantity());
+					lootList.add(tracked);
 				});
 		return lootList;
 	}
@@ -954,88 +1275,140 @@ public class RaidTrackerPlugin extends Plugin
 		return RT;
 	}
 
+	/** Use the character name, not the login name. A blank name must not select the shared plugin folder. */
+	private void bindAccountFolder() {
+		if (fw == null || client.getLocalPlayer() == null || client.getLocalPlayer().getName() == null) {
+			return;
+		}
+		String name = Text.toJagexName(client.getLocalPlayer().getName());
+		if (fw.updateUsername(name) && panel != null) {
+			SwingUtilities.invokeLater(() -> {
+				if (panel != null) {
+					panel.loadRTList();
+				}
+			});
+		}
+	}
+
+	/** The reward chest widget. Shutdown uses this so a restart can fill the raid that is still open. */
+	private boolean archiveChestVisible() {
+		if (client == null) {
+			return false;
+		}
+		try {
+			return client.getWidget(InterfaceID.TfaChests.ITEMS) != null;
+		} catch (RuntimeException ex) {
+			log.warn("Could not read The Fractured Archive chest", ex);
+			return false;
+		}
+	}
+
+	/** Logged in, and the game has finished placing the player. The temp tile is not a real location yet. */
+	private boolean archiveLocationReady() {
+		if (client.getGameState() != GameState.LOGGED_IN || client.getLocalPlayer() == null) {
+			return false;
+		}
+		WorldPoint location = client.getLocalPlayer().getWorldLocation();
+		return location != null && !location.equals(TEMP_LOCATION);
+	}
+
+	private RaidTracker latestArchiveRaid() {
+		if (fw == null) {
+			return null;
+		}
+		ArrayList<RaidTracker> raids = fw.readFromFile(RaidType.TFA);
+		if (raids.isEmpty()) {
+			return null;
+		}
+		return raids.get(raids.size() - 1);
+	}
+
+	/**
+	 * A line still marked open can become the claim again. An open chest does not revive a closed line,
+	 * so the next raid's loot cannot be written onto the previous raid.
+	 */
+	private void settleArchiveResume(boolean archiveWidgets) {
+		if (archive == null || !archive.needsResumeCheck()) {
+			return;
+		}
+		RaidTracker latest = latestArchiveRaid();
+		if (archive.noteResumeTick(archiveWidgets, latest, System.currentTimeMillis())) {
+			SwingUtilities.invokeLater(() -> {
+				if (panel != null) {
+					panel.loadRTList();
+				}
+			});
+		}
+	}
+
+	/** Chambers, Theatre, or Tombs ended. A parked Archive line stays open for a later unique or chest. */
 	private void reset()
+	{
+		if (archive != null && archive.isParked()) {
+			archiveEmptyChestTicks = 0;
+			replaceRaidTracker();
+			return;
+		}
+		finishArchiveNow();
+	}
+
+	/** Hop, or shutdown away from the chest. A completion is written and the claim closes. */
+	private void finishArchiveNow()
+	{
+		finishArchiveNow(false);
+	}
+
+	/**
+	 * Shutdown with the reward chest still open keeps that line able to take its loot after a restart.
+	 * A closed line is left closed, so the next raid's chest cannot be written onto it.
+	 */
+	private void finishArchiveNow(boolean chestStillOpen)
+	{
+		archiveEmptyChestTicks = 0;
+		if (archive != null && archive.hasUnstoredCompletion() && archive.foreignTracker()) {
+			replaceRaidTracker();
+		}
+		RaidTracker departedArchive = null;
+		if (archive != null) {
+			archive.finished(chestStillOpen);
+			archive.takeRewardClosed();
+			departedArchive = archive.takeDepartedRaid();
+			archive.takeLiveReset();
+		}
+		if (departedArchive != null) {
+			showArchiveClaim(departedArchive);
+			return;
+		}
+		replaceRaidTracker();
+	}
+
+	/** The chest line stays open so a teammate unique can be written onto that same raid. */
+	private void resetAfterArchiveClaim()
+	{
+		replaceRaidTracker();
+	}
+
+	/** Replace the live tracker before the next client event, then show the saved raid. */
+	private void showArchiveClaim(RaidTracker savedArchive)
+	{
+		resetAfterArchiveClaim();
+		if (savedArchive == null || panel == null) {
+			return;
+		}
+		SwingUtilities.invokeLater(() -> {
+			if (panel != null) {
+				panel.addDrop(savedArchive);
+			}
+		});
+	}
+
+	private void replaceRaidTracker()
 	{
 		raidTracker = new RaidTracker();
         raidTracker.setAccountHash(client.getAccountHash());
         raidTracker.setProfileType(String.valueOf(RuneScapeProfileType.getCurrent(client)));
 		writerStarted = false;
 		raidStarted = false;
-	}
-
-	//from stackoverflow
-	public String unescapeJavaString(String st) {
-
-		if (st == null) {
-			return null;
-		}
-
-		StringBuilder sb = new StringBuilder(st.length());
-
-		for (int i = 0; i < st.length(); i++) {
-			char ch = st.charAt(i);
-			if (ch == '\\') {
-				char nextChar = (i == st.length() - 1) ? '\\' : st
-						.charAt(i + 1);
-				// Octal escape?
-				if (nextChar >= '0' && nextChar <= '7') {
-					String code = "" + nextChar;
-					i++;
-					if ((i < st.length() - 1) && st.charAt(i + 1) >= '0'
-							&& st.charAt(i + 1) <= '7') {
-						code += st.charAt(i + 1);
-						i++;
-						if ((i < st.length() - 1) && st.charAt(i + 1) >= '0'
-								&& st.charAt(i + 1) <= '7') {
-							code += st.charAt(i + 1);
-							i++;
-						}
-					}
-					sb.append((char) Integer.parseInt(code, 8));
-					continue;
-				}
-				switch (nextChar) {
-					case '\\':
-						break;
-					case 'b':
-						ch = '\b';
-						break;
-					case 'f':
-						ch = '\f';
-						break;
-					case 'n':
-						ch = '\n';
-						break;
-					case 'r':
-						ch = '\r';
-						break;
-					case 't':
-						ch = '\t';
-						break;
-					case '\"':
-						ch = '\"';
-						break;
-					case '\'':
-						ch = '\'';
-						break;
-					// Hex Unicode: u????
-					case 'u':
-						if (i >= st.length() - 5) {
-							ch = 'u';
-							break;
-						}
-						int code = Integer.parseInt(
-								"" + st.charAt(i + 2) + st.charAt(i + 3)
-										+ st.charAt(i + 4) + st.charAt(i + 5), 16);
-						sb.append(Character.toChars(code));
-						i += 5;
-						continue;
-				}
-				i++;
-			}
-			sb.append(ch);
-		}
-		return sb.toString();
 	}
 
 	public long getItemPrice(ItemPrice itemPrice) {

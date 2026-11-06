@@ -33,6 +33,15 @@ public enum RaidUniques {
     SCYTHE("Scythe of vitur (uncharged)", ItemID.SCYTHE_OF_VITUR_UNCHARGED),
     LILZIK("Lil' Zik", ItemID.VERZIKPET),
 
+    ARCHIVISTS_FOLIO("Archivist's folio (inert)", ItemID.ARCHIVISTS_FOLIO_EMPTY),
+
+    HORN_OF_BRAN("Horn of Bran", ItemID.TFA_ZEAL_REWARD),
+    ZORYAS_TOME("Zorya's tome (uncharged)", ItemID.ZORYAS_TOME_UNCHARGED),
+    RONDACHE("Rondache", ItemID.RONDACHE),
+    ASCENSION_CROSSBOWS("Ascension crossbows", ItemID.ASCENSION_CROSSBOWS),
+    OBLIGATOR("Obligator (uncharged)", ItemID.OBLIGATOR_UNCHARGED),
+    ORION("Orion", ItemID.OCELLUSPET),
+
     OSMUMTENS_FANG("Osmumten's fang", ItemID.OSMUMTENS_FANG),
     LIGHTBEARER("Lightbearer", ItemID.LIGHTBEARER),
     ELIDINIS_WARD("Elidinis' ward", ItemID.ELIDINIS_WARD),
@@ -76,6 +85,59 @@ public enum RaidUniques {
         TUMEKENS_SHADOW,
         TUMEKENS_GUARDIAN
     );
+
+    public static final EnumSet<RaidUniques> TFA_UNIQUES = EnumSet.of(
+        HORN_OF_BRAN,
+        ZORYAS_TOME,
+        RONDACHE,
+        ASCENSION_CROSSBOWS,
+        OBLIGATOR,
+        ORION
+    );
+
+    /**
+     * Chest id, or a confirmed special-loot name, for a Fractured Archive unique.
+     * The folio is regular loot. Orion is included by id and by the broadcast name.
+     */
+    public static RaidUniques archiveUnique(int id, String name) {
+        if (id == ItemID.TFA_ZEAL_REWARD || sameName(name, HORN_OF_BRAN)) {
+            return HORN_OF_BRAN;
+        }
+        if (id == ItemID.ZORYAS_TOME || id == ItemID.ZORYAS_TOME_UNCHARGED || sameName(name, ZORYAS_TOME)) {
+            return ZORYAS_TOME;
+        }
+        if (id == ItemID.RONDACHE || sameName(name, RONDACHE)) {
+            return RONDACHE;
+        }
+        if (id == ItemID.ASCENSION_CROSSBOWS || sameName(name, ASCENSION_CROSSBOWS)) {
+            return ASCENSION_CROSSBOWS;
+        }
+        if (id == ItemID.OBLIGATOR || id == ItemID.OBLIGATOR_UNCHARGED || sameName(name, OBLIGATOR)) {
+            return OBLIGATOR;
+        }
+        if (id == ItemID.OCELLUSPET || id == ItemID.OCELLUSPET_VARIANT_1 || sameName(name, ORION)) {
+            return ORION;
+        }
+        return null;
+    }
+
+    public static boolean isArchiveUniqueId(int id) {
+        return archiveUnique(id, null) != null;
+    }
+
+    private static boolean sameName(String name, RaidUniques unique) {
+        if (name == null) {
+            return false;
+        }
+        String trimmed = name.trim().replace('\u2019', '\'');
+        if (unique.getName().equalsIgnoreCase(trimmed)) {
+            return true;
+        }
+        if (unique == OBLIGATOR && trimmed.equalsIgnoreCase("Obligator")) {
+            return true;
+        }
+        return unique == ZORYAS_TOME && trimmed.equalsIgnoreCase("Zorya's tome");
+    }
 
     public static final EnumSet<RaidUniques> TOB_UNIQUES = EnumSet.of(
         AVERNIC,

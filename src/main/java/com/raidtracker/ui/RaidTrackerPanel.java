@@ -6,6 +6,7 @@ import com.raidtracker.RaidTracker;
 import com.raidtracker.RaidTrackerConfig;
 import com.raidtracker.RaidTrackerItem;
 import com.raidtracker.RaidType;
+import com.raidtracker.UniqueDrop;
 import com.raidtracker.WorldUtils;
 import com.raidtracker.filereadwriter.FileReadWriter;
 import lombok.Getter;
@@ -73,6 +74,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -101,10 +104,12 @@ public class RaidTrackerPanel extends PluginPanel {
     private ArrayList<RaidTracker> coxRTList;
     private ArrayList<RaidTracker> tobRTList;
 	private ArrayList<RaidTracker> toaRTList;
+	private ArrayList<RaidTracker> tfaRTList = new ArrayList<>();
 
     private final HashMap<String, RaidTracker> coxUUIDMap = new LinkedHashMap<>();
     private final HashMap<String, RaidTracker> tobUUIDMap = new LinkedHashMap<>();
 	private final HashMap<String, RaidTracker> toaUUIDMap = new LinkedHashMap<>();
+	private final HashMap<String, RaidTracker> tfaUUIDMap = new LinkedHashMap<>();
 
     @Setter
     private boolean loaded = false;
@@ -145,6 +150,8 @@ public class RaidTrackerPanel extends PluginPanel {
 	private Component titleComponent;
 	private Component filterComponent;
     private Component regularDropsComponent;
+    /** The chest line still accepting a teammate unique. A reload must keep this object, not a disk copy. */
+    private Supplier<RaidTracker> liveArchiveRaid = () -> null;
 
     public RaidTrackerPanel(
         final ItemManager itemManager,
@@ -284,11 +291,13 @@ public class RaidTrackerPanel extends PluginPanel {
         JPanel filterPanel = getFilterPanel();
         JPanel killsLoggedPanel = getKillsLoggedPanel();
         JPanel uniquesPanel = getUniquesPanel();
-        JPanel pointsPanel = getPointsPanel();
         JPanel splitsEarnedPanel = getSplitsEarnedPanel();
         JPanel changePurples = getChangePurples();
-        JPanel mvpPanel = getMvpPanel();
         JPanel timeSplitsPanel = getTimeSplitsPanel();
+        boolean theatreTab = selectedRaidTab.equals(RaidType.TOB);
+        JPanel mvpPanel = theatreTab && config.showMVPs() ? getMvpPanel() : null;
+        JPanel pointsPanel = !theatreTab && !selectedRaidTab.equals(RaidType.TFA) && config.showPoints()
+            ? getPointsPanel() : null;
 
         // Replaces panel.removeAll() to allow for selective component removal when dealing with ToA filter keypresses
         for (Component component : panel.getComponents()) {
@@ -320,10 +329,10 @@ public class RaidTrackerPanel extends PluginPanel {
             panel.add(Box.createRigidArea(new Dimension(0, 5)));
         }
 
-        if (selectedRaidTab.equals(RaidType.TOB) && config.showMVPs()) {
+        if (mvpPanel != null) {
             panel.add(mvpPanel);
             panel.add(Box.createRigidArea(new Dimension(0, 5)));
-        } else if (config.showPoints()) {
+        } else if (pointsPanel != null) {
             panel.add(pointsPanel);
             panel.add(Box.createRigidArea(new Dimension(0, 5)));
         }
@@ -388,7 +397,7 @@ public class RaidTrackerPanel extends PluginPanel {
 
 
         final JPanel buttonWrapper = new JPanel();
-        buttonWrapper.setLayout(new GridLayout(0, 3));
+        buttonWrapper.setLayout(new GridLayout(0, 4));
         buttonWrapper.setBorder(new EmptyBorder(5, 0, 0, 0));
 
         JPanel coxButtonWrapper = new JPanel();
@@ -402,6 +411,10 @@ public class RaidTrackerPanel extends PluginPanel {
 		JPanel toaButtonWrapper = new JPanel();
 		toaButtonWrapper.setLayout(new GridLayout(0, 1));
 		JButton toaButton = new JButton();
+
+		JPanel tfaButtonWrapper = new JPanel();
+		tfaButtonWrapper.setLayout(new GridLayout(0, 1));
+		JButton tfaButton = new JButton();
 
         coxButton.setText("CoX");
         coxButton.setForeground(Color.white);
@@ -475,13 +488,39 @@ public class RaidTrackerPanel extends PluginPanel {
 			}
 		});
 
+		tfaButton.setText("TFA");
+		tfaButton.setForeground(Color.white);
+		tfaButton.setFont(FontManager.getRunescapeSmallFont());
+		tfaButton.setContentAreaFilled(false);
+		tfaButton.setOpaque(false);
+		tfaButton.setFocusable(false);
+		tfaButton.setBorderPainted(false);
+		tfaButton.setBorder(new EmptyBorder(10, 0, 10, 0));
+
+		if (selectedRaidTab.equals(RaidType.TFA)) {
+			tfaButtonWrapper.setBorder(new MatteBorder(1, 1, 0, 1, ColorScheme.LIGHT_GRAY_COLOR.darker()));
+		} else {
+			tfaButtonWrapper.setBorder(new MatteBorder(0, 0, 1, 0, ColorScheme.LIGHT_GRAY_COLOR.darker()));
+		}
+
+		tfaButton.setFocusPainted(false);
+		tfaButton.setToolTipText("Show The Fractured Archive Loot");
+		tfaButton.addActionListener(e -> {
+			if (!selectedRaidTab.equals(RaidType.TFA)) {
+				selectedRaidTab = RaidType.TFA;
+				updateView();
+			}
+		});
+
         coxButtonWrapper.add(coxButton);
         tobButtonWrapper.add(tobButton);
 		toaButtonWrapper.add(toaButton);
+		tfaButtonWrapper.add(tfaButton);
 
         buttonWrapper.add(coxButtonWrapper);
         buttonWrapper.add(tobButtonWrapper);
 		buttonWrapper.add(toaButtonWrapper);
+		buttonWrapper.add(tfaButtonWrapper);
 
         JPanel titleLabelWrapper = new JPanel();
         JLabel titleLabel = new JLabel("Raid Data Tracker");
@@ -571,7 +610,9 @@ public class RaidTrackerPanel extends PluginPanel {
                     break;
                 default:
                     l = filterRTListByName(unique.getName());
-                    l2 = filterOwnDrops(l);
+                    l2 = selectedRaidTab == RaidType.TFA
+                        ? filterOwnNamedDrops(l, unique.getName())
+                        : filterOwnDrops(l);
                     break;
             }
 
@@ -683,7 +724,10 @@ public class RaidTrackerPanel extends PluginPanel {
         long splitGP = 0;
 
         if (loaded) {
-            splitGP = atLeastZero(getFilteredRTList().stream().mapToLong(RaidTracker::getLootSplitReceived).sum());
+            splitGP = atLeastZero(getFilteredRTList().stream()
+                .mapToLong(RaidTracker::getLootSplitReceived)
+                .filter(value -> value >= 0)
+                .sum());
         }
 
         JLabel textLabel = textPanel("Split GP earned:");
@@ -846,6 +890,16 @@ public class RaidTrackerPanel extends PluginPanel {
 					toaRTList = new ArrayList<>(toaUUIDMap.values());
 					fw.updateRTList(toaRTList, RaidType.TOA);
 					break;
+				case TFA:
+					SCList.forEach(SC -> {
+						RaidTracker tempRaidTracker = SC.getRaidTracker();
+						tfaUUIDMap.put(tempRaidTracker.getUniqueID(), tempRaidTracker);
+					});
+					tfaRTList = new ArrayList<>(tfaUUIDMap.values());
+					// A teammate unique rewrites this log on the client thread. Save there too.
+					ArrayList<RaidTracker> archiveSave = new ArrayList<>(tfaRTList);
+					clientThread.invokeLater(() -> fw.updateRTList(archiveSave, RaidType.TFA));
+					break;
 				default:
                     log.error("Unexpected selectedRaidTab value, unable to update purple splits.");
                     break;
@@ -1004,6 +1058,7 @@ public class RaidTrackerPanel extends PluginPanel {
                 });
 				break;
 			case TOA:
+			case TFA:
 				teamSize = new JComboBox<>(new String [] {
                     "All Sizes",
                     "Solo",
@@ -1177,14 +1232,7 @@ public class RaidTrackerPanel extends PluginPanel {
 
 
         if (loaded) {
-            mvpAmount = tobRTList.stream().mapToInt(RT -> {
-                if (RT.isMvpInOwnName()) {
-                    return 1;
-                }
-                return 0;
-            }).sum();
-
-
+            mvpAmount = tobRTList.stream().mapToInt(RT -> RT.isMvpInOwnName() ? 1 : 0).sum();
         }
 
         JLabel textLabel = textPanel("Total MVPs:");
@@ -1615,6 +1663,20 @@ public class RaidTrackerPanel extends PluginPanel {
                     ), 5));
 					timeTableContainer.add(timeTable);
 					break;
+				case TFA:
+					timeTable.setLayout(new GridLayout(0, 2));
+					timeTable.setBorder(new EmptyBorder(5, 3, 1, 3));
+					timeTable.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					addBestTime(timeTable, "Guardian Time", RaidTracker::getArchiveGuardianTime);
+					addBestTime(timeTable, "Ezekiel Time", RaidTracker::getEzekielTime);
+					addBestTime(timeTable, "Bork Time", RaidTracker::getBorkTime);
+					addBestTime(timeTable, "Moia Time", RaidTracker::getMoiaTime);
+					addBestTime(timeTable, "Dreadnoth Time", RaidTracker::getDreadnothTime);
+					addBestTime(timeTable, "Dagon'hai Time", RaidTracker::getDagonhaiTime);
+					addBestTime(timeTable, "Xarth Time", RaidTracker::getXarthTime);
+					addBestTime(timeTable, "Ocellus Time", RaidTracker::getOcellusTime);
+					wrapper.add(timeTable);
+					break;
 				default:
                     break;
 			}
@@ -1649,6 +1711,11 @@ public class RaidTrackerPanel extends PluginPanel {
         }
 
         return wrapper;
+    }
+
+    /** Share under this value is free-for-all when the raid itself is not marked free-for-all. */
+    long ffaCutoff() {
+        return config == null ? 0L : config.FFACutoff();
     }
 
     public void setUpdateButton(boolean b) {
@@ -1748,6 +1815,46 @@ public class RaidTrackerPanel extends PluginPanel {
         return b;
     }
 
+    /** The same completion logged again, or updated after a restart, replaces the row already on screen. */
+    private boolean replaceArchiveRow(RaidTracker raid) {
+        if (raid == null || raid.getUniqueID() == null) {
+            return false;
+        }
+        for (int i = 0; i < tfaRTList.size(); i++) {
+            RaidTracker existing = tfaRTList.get(i);
+            if (existing != null && raid.getUniqueID().equals(existing.getUniqueID())) {
+                tfaRTList.set(i, raid);
+                tfaUUIDMap.put(raid.getUniqueID(), raid);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Plugin supplies the open chest line so Refresh and config reloads do not swap in a stale copy. */
+    public void setLiveArchiveRaid(Supplier<RaidTracker> liveArchiveRaid) {
+        this.liveArchiveRaid = liveArchiveRaid == null ? () -> null : liveArchiveRaid;
+    }
+
+    private void keepLiveArchiveRaid() {
+        if (liveArchiveRaid == null) {
+            return;
+        }
+        RaidTracker live = liveArchiveRaid.get();
+        if (live == null || live.getUniqueID() == null) {
+            return;
+        }
+        tfaUUIDMap.put(live.getUniqueID(), live);
+        for (int i = 0; i < tfaRTList.size(); i++) {
+            RaidTracker existing = tfaRTList.get(i);
+            if (existing != null && live.getUniqueID().equals(existing.getUniqueID())) {
+                tfaRTList.set(i, live);
+                return;
+            }
+        }
+        tfaRTList.add(live);
+    }
+
     public void loadRTList() {
         //TODO: support for a custom file so that it can be added to onedrive for example.
         coxRTList = fw.readFromFile(RaidType.COX);
@@ -1767,12 +1874,36 @@ public class RaidTrackerPanel extends PluginPanel {
 			toaUUIDMap.put(RT.getUniqueID(), RT);
 		}
 
+		tfaRTList = fw.readFromFile(RaidType.TFA);
+		tfaUUIDMap.clear();
+
+		for (RaidTracker RT : tfaRTList) {
+			tfaUUIDMap.put(RT.getUniqueID(), RT);
+		}
+		keepLiveArchiveRaid();
+
         loaded = true;
         updateView();
     }
 
+    private boolean hasUniqueNamed(RaidTracker raidTracker, String name) {
+        if (raidTracker.getUniques() == null || name == null) {
+            return false;
+        }
+        for (UniqueDrop drop : raidTracker.getUniques()) {
+            if (drop != null && drop.getItem() != null && name.equalsIgnoreCase(drop.getItem())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public ArrayList<RaidTracker> filterRTListByName(String name) {
         if (loaded) {
+            if (selectedRaidTab == RaidType.TFA) {
+                return getFilteredRTList().stream().filter(RT -> hasUniqueNamed(RT, name))
+                    .collect(Collectors.toCollection(ArrayList::new));
+            }
             return getFilteredRTList().stream().filter(RT -> name.toLowerCase().equals(RT.getSpecialLoot().toLowerCase()))
                     .collect(Collectors.toCollection(ArrayList::new));
         }
@@ -1799,6 +1930,15 @@ public class RaidTrackerPanel extends PluginPanel {
             return getFilteredRTList().stream().filter(RT -> !RT.getPetReceiver().isEmpty()).collect(Collectors.toCollection(ArrayList::new));
         }
         return new ArrayList<>();
+    }
+
+    public ArrayList<RaidTracker> filterOwnNamedDrops(ArrayList<RaidTracker> l, String uniqueName) {
+        if (!loaded) {
+            return new ArrayList<>();
+        }
+        return l.stream()
+            .filter(RT -> UniqueDrop.owns(RT.getUniques(), uniqueName))
+            .collect(Collectors.toCollection(ArrayList::new));
     }
 
     public ArrayList<RaidTracker> filterOwnDrops(ArrayList<RaidTracker> l) {
@@ -1843,6 +1983,9 @@ public class RaidTrackerPanel extends PluginPanel {
     public ArrayList<RaidTracker> filterPurples() {
         if (loaded) {
             return getFilteredRTList().stream().filter(RT -> {
+				if (RT.isInFracturedArchive()) {
+					return RT.getUniques() != null && !RT.getUniques().isEmpty();
+				}
                 for (RaidUniques unique : getUniquesList()) {
                     if (unique.getName().toLowerCase().equals(RT.getSpecialLoot().toLowerCase())) {
                         return true;
@@ -1869,7 +2012,11 @@ public class RaidTrackerPanel extends PluginPanel {
     }
 
     public void addDrop(RaidTracker RT, boolean update) {
-        if (RT.isInRaidChambers()) {
+        if (RT.isInFracturedArchive()) {
+            if (!replaceArchiveRow(RT)) {
+                tfaRTList.add(RT);
+            }
+        } else if (RT.isInRaidChambers()) {
             coxRTList.add(RT);
         } else if (RT.isInTheatreOfBlood()) {
             tobRTList.add(RT);
@@ -1893,7 +2040,10 @@ public class RaidTrackerPanel extends PluginPanel {
     }
 
     public void addDropToPanel(RaidTracker RT, boolean updateRTList) {
-        if (RT.isInRaidChambers()) {
+        if (RT.isInFracturedArchive()) {
+            tfaUUIDMap.put(RT.getUniqueID(), RT);
+            tfaRTList = updateRTList ? new ArrayList<>(tfaUUIDMap.values()) : tfaRTList;
+        } else if (RT.isInRaidChambers()) {
             coxUUIDMap.put(RT.getUniqueID(), RT);
             coxRTList = updateRTList ? new ArrayList<>(coxUUIDMap.values()) : coxRTList;
         } else if (RT.isInTheatreOfBlood()) {
@@ -1943,6 +2093,7 @@ public class RaidTrackerPanel extends PluginPanel {
         CompletableFuture<Map<Integer, RaidTrackerItem>> future = new CompletableFuture<>();
 
         clientThread.invokeLater(() -> {
+            try {
             if (!loaded) {
                 future.complete(new HashMap<>());
                 return;
@@ -1956,11 +2107,18 @@ public class RaidTrackerPanel extends PluginPanel {
             int clues = 0;
 
             for (RaidTracker rt : getFilteredRTList()) {
+                if (rt == null || rt.getLootList() == null) {
+                    continue;
+                }
                 for (RaidTrackerItem item : rt.getLootList()) {
+                    if (item == null || item.getName() == null) {
+                        continue;
+                    }
                     int id = item.getId();
                     String name = item.getName();
 
-                    if (raidUniqueIDs.contains(id)) {
+                    if (raidUniqueIDs.contains(id)
+                        || (selectedRaidTab == RaidType.TFA && RaidUniques.isArchiveUniqueId(id))) {
                         continue;
                     }
 
@@ -1980,6 +2138,9 @@ public class RaidTrackerPanel extends PluginPanel {
                 int quantity = entry.getValue();
 
                 ItemComposition itemComposition = itemManager.getItemComposition(id);
+                if (itemComposition == null || itemComposition.getName() == null) {
+                    continue;
+                }
 
                 RaidTrackerItem item = new RaidTrackerItem();
                 item.name = itemComposition.getName();
@@ -2001,6 +2162,10 @@ public class RaidTrackerPanel extends PluginPanel {
             }
 
             future.complete(drops);
+            } catch (RuntimeException ex) {
+                log.warn("Could not build the regular drop list", ex);
+                future.complete(new HashMap<>());
+            }
         });
 
         return future;
@@ -2039,6 +2204,9 @@ public class RaidTrackerPanel extends PluginPanel {
 			case TOA:
 				tempRTList = toaRTList.stream().filter(RT -> RT.getRaidLevel() >= raidLevelFilterLow && RT.getRaidLevel() <= raidLevelFilterHigh)
 					.collect(Collectors.toCollection(ArrayList::new));
+				break;
+			case TFA:
+				tempRTList = tfaRTList;
 				break;
 			default:
                 tempRTList = new ArrayList<>();
@@ -2089,6 +2257,7 @@ public class RaidTrackerPanel extends PluginPanel {
             case "15-24 Players":
 				tempRTList = tempRTList.stream().filter(RT -> (RT.getTeamSize() >= 15 && RT.getTeamSize() <= 24))
 					.collect(Collectors.toCollection(ArrayList::new));
+				break;
 			case "24+ Players":
                 tempRTList = tempRTList.stream().filter(RT -> (RT.getTeamSize() >= 25))
                         .collect(Collectors.toCollection(ArrayList::new));
@@ -2145,6 +2314,8 @@ public class RaidTrackerPanel extends PluginPanel {
                 return RaidUniques.TOB_UNIQUES;
 			case TOA:
                 return RaidUniques.TOA_UNIQUES;
+			case TFA:
+                return RaidUniques.TFA_UNIQUES;
 			default:
                 return null;
 		}
@@ -2185,6 +2356,20 @@ public class RaidTrackerPanel extends PluginPanel {
 
             loadRTList();
         }
+    }
+
+    private void addBestTime(JPanel table, String label, Function<RaidTracker, Integer> time) {
+        table.add(textPanel(label, 0));
+        table.add(textPanel(secondsToMinuteString(bestSeconds(time)), 1));
+    }
+
+    /** Fastest recorded room. A skipped fight has no value, so it does not count. */
+    private int bestSeconds(Function<RaidTracker, Integer> time) {
+        return getFilteredRTList().stream()
+            .map(time)
+            .filter(seconds -> seconds != null && seconds > 0)
+            .min(Integer::compareTo)
+            .orElse(-1);
     }
 
     private String secondsToMinuteString(int seconds) {
